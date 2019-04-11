@@ -244,32 +244,65 @@ void ILI9488_t3::fillScreen(uint16_t color)
 // fill a rectangle
 void ILI9488_t3::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
 {
-	// rudimentary clipping (drawChar w/big text requires this)
-	if((x >= _width) || (y >= _height)) return;
-	if(x < 0) {	w += x; x = 0; 	}
-	if(y < 0) {	h += y; y = 0; 	}
-	if((x + w - 1) >= _width)  w = _width  - x;
-	if((y + h - 1) >= _height) h = _height - y;
+	x+=_originx;
+	y+=_originy;
 
-	// TODO: this can result in a very long transaction time
-	// should break this into multiple transactions, even though
-	// it'll cost more overhead, so we don't stall other SPI libs
-	beginSPITransaction();
-	setAddr(x, y, x+w-1, y+h-1);
-	writecommand_cont(ILI9488_RAMWR);
-	for(y=h; y>0; y--) {
-		for(x=w; x>1; x--) {
-			//write16BitColor(color);
-			write16BitColor(color);
+	// Rectangular clipping (drawChar w/big text requires this)
+	if((x >= _displayclipx2) || (y >= _displayclipy2)) return;
+	if (((x+w) <= _displayclipx1) || ((y+h) <= _displayclipy1)) return;
+	if(x < _displayclipx1) {	w -= (_displayclipx1-x); x = _displayclipx1; 	}
+	if(y < _displayclipy1) {	h -= (_displayclipy1 - y); y = _displayclipy1; 	}
+	if((x + w - 1) >= _displayclipx2)  w = _displayclipx2  - x;
+	if((y + h - 1) >= _displayclipy2) h = _displayclipy2 - y;
+
+	#ifdef ENABLE_ILI9341_FRAMEBUFFER
+	if (_use_fbtft) {
+		if ((x&1) || (w&1)) {
+			uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+			for (;h>0; h--) {
+				uint16_t * pfbPixel = pfbPixel_row;
+				for (int i = 0 ;i < w; i++) {
+					*pfbPixel++ = color;
+				}
+				pfbPixel_row += _width;
+			}
+		} else {
+			// Horizontal is even number so try 32 bit writes instead
+			uint32_t color32 = (color << 16) | color;
+			uint32_t * pfbPixel_row = (uint32_t *)((uint16_t*)&_pfbtft[ y*_width + x]);
+			w = w/2;	// only iterate half the times
+			for (;h>0; h--) {
+				uint32_t * pfbPixel = pfbPixel_row;
+				for (int i = 0 ;i < w; i++) {
+					*pfbPixel++ = color32;
+				}
+				pfbPixel_row += (_width/2);
+			}
 		}
-		//write16BitColor(color, true);
-		write16BitColor(color, true);
-		if (y > 1 && (y & 1)) {
-			endSPITransaction();
-			beginSPITransaction();
+	} else 
+	#endif
+	{
+
+		// TODO: this can result in a very long transaction time
+		// should break this into multiple transactions, even though
+		// it'll cost more overhead, so we don't stall other SPI libs
+		beginSPITransaction();
+		setAddr(x, y, x+w-1, y+h-1);
+		writecommand_cont(ILI9488_RAMWR);
+		for(y=h; y>0; y--) {
+			for(x=w; x>1; x--) {
+				write16BitColor(color);
+			}
+			write16BitColor(color,true);
+#if 0
+			if (y > 1 && (y & 1)) {
+				endSPITransaction();
+				beginSPITransaction();
+			}
+#endif			
 		}
+		endSPITransaction();
 	}
-	endSPITransaction();
 }
 
 // fillRectVGradient	- fills area with vertical gradient
@@ -625,7 +658,7 @@ uint16_t ILI9488_t3::readPixel(int16_t x, int16_t y)
    if (_miso == 0xff) return 0xffff;	// bail if not valid miso
 
 	// First pass for other SPI busses use readRect to handle the read... 
-	if (sizeFIFO() < 4) {
+	if (hardware().queue_size < 4) {
 		uint16_t colors;
 		readRect(x, y, 1, 1, &colors);
 		return colors;
@@ -645,22 +678,22 @@ uint16_t ILI9488_t3::readPixel(int16_t x, int16_t y)
 	waitTransmitComplete();
 
 	// Push 4 bytes over SPI
-	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
+	KINETISK_SPI0.PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
 	waitFifoEmpty();    // wait for both queues to be empty.
 
-	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
-	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
-	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_EOQ;
+	KINETISK_SPI0.PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
+	KINETISK_SPI0.PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
+	KINETISK_SPI0.PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_EOQ;
 
 	// Wait for End of Queue
-	while ((_pkinetisk_spi->SR & SPI_SR_EOQF) == 0) ;
-	_pkinetisk_spi->SR = SPI_SR_EOQF;  // make sure it is clear
+	while ((KINETISK_SPI0.SR & SPI_SR_EOQF) == 0) ;
+	KINETISK_SPI0.SR = SPI_SR_EOQF;  // make sure it is clear
 
 	// Read Pixel Data
-	dummy = _pkinetisk_spi->POPR;	// Read a DUMMY byte of GRAM
-	r = _pkinetisk_spi->POPR;		// Read a RED byte of GRAM
-	g = _pkinetisk_spi->POPR;		// Read a GREEN byte of GRAM
-	b = _pkinetisk_spi->POPR;		// Read a BLUE byte of GRAM
+	dummy = KINETISK_SPI0.POPR;	// Read a DUMMY byte of GRAM
+	r = KINETISK_SPI0.POPR;		// Read a RED byte of GRAM
+	g = KINETISK_SPI0.POPR;		// Read a GREEN byte of GRAM
+	b = KINETISK_SPI0.POPR;		// Read a BLUE byte of GRAM
 
 	endSPITransaction();
 	return color565(r,g,b);
@@ -708,26 +741,26 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 	writecommand_cont(ILI9488_RAMRD); // read from RAM
 
 	// transmit a DUMMY byte before the color bytes
-	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
+	KINETISK_SPI0.PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
 
 	// skip values returned by the queued up transfers and the current in-flight transfer
-	uint32_t sr = _pkinetisk_spi->SR;
+	uint32_t sr = KINETISK_SPI0.SR;
 	uint8_t skipCount = ((sr >> 4) & 0xF) + ((sr >> 12) & 0xF) + 1;
 
 	while (txCount || rxCount) {
 		// transmit another byte if possible
-		if (txCount && ((_pkinetisk_spi->SR & 0xF000) >> 12) < sizeFIFO()) {
+		if (txCount && ((KINETISK_SPI0.SR & 0xF000) >> 12) < hardware().queue_size()) {
 			txCount--;
 			if (txCount) {
-				_pkinetisk_spi->PUSHR = READ_PIXEL_PUSH_BYTE | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
+				KINETISK_SPI0.PUSHR = READ_PIXEL_PUSH_BYTE | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
 			} else {
-				_pkinetisk_spi->PUSHR = READ_PIXEL_PUSH_BYTE | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_EOQ;
+				KINETISK_SPI0.PUSHR = READ_PIXEL_PUSH_BYTE | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_EOQ;
 			}
 		}
 
 		// receive another byte if possible, and either skip it or store the color
-		if (rxCount && (_pkinetisk_spi->SR & 0xF0)) {
-			rgb[rgbIdx] = _pkinetisk_spi->POPR;
+		if (rxCount && (KINETISK_SPI0.SR & 0xF0)) {
+			rgb[rgbIdx] = KINETISK_SPI0.POPR;
 
 			if (skipCount) {
 				skipCount--;
@@ -743,8 +776,8 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 	}
 
 	// wait for End of Queue
-	while ((_pkinetisk_spi->SR & SPI_SR_EOQF) == 0) ;
-	_pkinetisk_spi->SR = SPI_SR_EOQF;  // make sure it is clear
+	while ((KINETISK_SPI0.SR & SPI_SR_EOQF) == 0) ;
+	KINETISK_SPI0.SR = SPI_SR_EOQF;  // make sure it is clear
 	endSPITransaction();
 
 }
