@@ -446,6 +446,9 @@ void ILI9488_t3::setRotation(uint8_t m)
 		break;
 	}
 	endSPITransaction();
+	setClipRect();
+	setOrigin();
+	
 	cursor_x = 0;
 	cursor_y = 0;
 }
