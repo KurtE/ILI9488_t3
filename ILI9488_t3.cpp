@@ -658,11 +658,11 @@ uint16_t ILI9488_t3::readPixel(int16_t x, int16_t y)
    if (_miso == 0xff) return 0xffff;	// bail if not valid miso
 
 	// First pass for other SPI busses use readRect to handle the read... 
-	if (hardware().queue_size < 4) {
-		uint16_t colors;
-		readRect(x, y, 1, 1, &colors);
-		return colors;
-	}
+	//if (SPIClass::hardware().queue_size < 4) {
+	//	uint16_t colors;
+	//	readRect(x, y, 1, 1, &colors);
+	//	return colors;
+	//}
 
 	uint8_t dummy __attribute__((unused));
 	uint8_t r,g,b;
@@ -749,7 +749,8 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 
 	while (txCount || rxCount) {
 		// transmit another byte if possible
-		if (txCount && ((KINETISK_SPI0.SR & 0xF000) >> 12) < hardware().queue_size()) {
+		//if (txCount && ((KINETISK_SPI0.SR & 0xF000) >> 12) < SPIClass::hardware().queue_size()) {
+		if (txCount && ((KINETISK_SPI0.SR & 0xF000) >> 12) < 4) {
 			txCount--;
 			if (txCount) {
 				KINETISK_SPI0.PUSHR = READ_PIXEL_PUSH_BYTE | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
