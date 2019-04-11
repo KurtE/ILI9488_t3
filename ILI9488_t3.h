@@ -624,7 +624,12 @@ class ILI9488_t3 : public Print
 
 		setAddr(x, y, x+w-1, y);
 		writecommand_cont(ILI9488_RAMWR);
-		do { write16BitColor(color); } while (--w > 0);
+		while (w > 1) {
+			write16BitColor(color);
+		 	w--;
+		}
+		write16BitColor(color, true);
+
 	}
 	
 	void VLine(int16_t x, int16_t y, int16_t h, uint16_t color)
@@ -646,7 +651,11 @@ class ILI9488_t3 : public Print
 
 		setAddr(x, y, x, y+h-1);
 		writecommand_cont(ILI9488_RAMWR);
-		do { write16BitColor(color); } while (--h > 0);
+		while (h > 1) {
+			write16BitColor(color);
+		 	h--;
+		}
+		write16BitColor(color, true);
 	}
 	
 	void Pixel(int16_t x, int16_t y, uint16_t color)
