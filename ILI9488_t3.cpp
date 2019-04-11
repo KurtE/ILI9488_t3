@@ -71,6 +71,7 @@ ILI9488_t3::ILI9488_t3(uint8_t cs, uint8_t dc, uint8_t rst, uint8_t mosi, uint8_
 	_height   = HEIGHT;
 	rotation  = 0;
 	cursor_y  = cursor_x    = 0;
+	cursor_y  = cursor_x    = 0;
 	textsize  = 1;
 	textcolor = textbgcolor = 0xFFFF;
 	wrap      = true;
@@ -173,7 +174,7 @@ void ILI9488_t3::drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
 	if((y+h-1) >= _displayclipy2) h = _displayclipy2-y;
 	if(h<1) return;
 
-	#ifdef ENABLE_ILI9341_FRAMEBUFFER
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
 		uint16_t * pfbPixel = &_pfbtft[ y*_width + x];
 		while (h--) {
@@ -274,10 +275,15 @@ void ILI9488_t3::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
 // fillRectVGradient	- fills area with vertical gradient
 void ILI9488_t3::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color1, uint16_t color2)
 {
-	// rudimentary clipping (drawChar w/big text requires this)
-	if((x >= _width) || (y >= _height)) return;
-	if((x + w - 1) >= _width)  w = _width  - x;
-	if((y + h - 1) >= _height) h = _height - y;
+	x+=_originx;
+	y+=_originy;
+
+	// Rectangular clipping 
+	if((x >= _displayclipx2) || (y >= _displayclipy2)) return;
+	if(x < _displayclipx1) {	w -= (_displayclipx1-x); x = _displayclipx1; 	}
+	if(y < _displayclipy1) {	h -= (_displayclipy1 - y); y = _displayclipy1; 	}
+	if((x + w - 1) >= _displayclipx2)  w = _displayclipx2  - x;
+	if((y + h - 1) >= _displayclipy2) h = _displayclipy2 - y;
 	
 	int16_t r1, g1, b1, r2, g2, b2, dr, dg, db, r, g, b;
 	color565toRGB14(color1,r1,g1,b1);
@@ -285,68 +291,110 @@ void ILI9488_t3::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t h, u
 	dr=(r2-r1)/h; dg=(g2-g1)/h; db=(b2-b1)/h;
 	r=r1;g=g1;b=b1;	
 
-	// TODO: this can result in a very long transaction time
-	// should break this into multiple transactions, even though
-	// it'll cost more overhead, so we don't stall other SPI libs
-	beginSPITransaction();
-	setAddr(x, y, x+w-1, y+h-1);
-	writecommand_cont(ILI9488_RAMWR);
-	for(y=h; y>0; y--) {
-		uint16_t color = RGB14tocolor565(r,g,b);
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (_use_fbtft) {
+		if ((x&1) || (w&1)) {
+			uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+			for (;h>0; h--) {
+				uint16_t color = RGB14tocolor565(r,g,b);
+				uint16_t * pfbPixel = pfbPixel_row;
+				for (int i = 0 ;i < w; i++) {
+					*pfbPixel++ = color;
+				}
+				r+=dr;g+=dg; b+=db;
+				pfbPixel_row += _width;
+			}
+		} else {
+			// Horizontal is even number so try 32 bit writes instead
+			uint32_t * pfbPixel_row = (uint32_t *)((uint16_t*)&_pfbtft[ y*_width + x]);
+			w = w/2;	// only iterate half the times
+			for (;h>0; h--) {
+				uint32_t * pfbPixel = pfbPixel_row;
+				uint16_t color = RGB14tocolor565(r,g,b);
+				uint32_t color32 = (color << 16) | color;
+				for (int i = 0 ;i < w; i++) {
+					*pfbPixel++ = color32;
+				}
+				pfbPixel_row += (_width/2);
+				r+=dr;g+=dg; b+=db;
+			}
+		}
+	} else 
+	#endif
+	{		
+		beginSPITransaction();
+		setAddr(x, y, x+w-1, y+h-1);
+		writecommand_cont(ILI9488_RAMWR);
+		for(y=h; y>0; y--) {
+			uint16_t color = RGB14tocolor565(r,g,b);
 
-		for(x=w; x>1; x--) {
-			//write16BitColor(color);
-			write16BitColor(color);
+			for(x=w; x>1; x--) {
+				write16BitColor(color);
+			}
+			writedata16_last(color);
+			if (y > 1 && (y & 1)) {
+				endSPITransaction();
+				beginSPITransaction();
+			}
+			r+=dr;g+=dg; b+=db;
 		}
-		//write16BitColor(color, true);
-		write16BitColor(color, true);
-		if (y > 1 && (y & 1)) {
-			endSPITransaction();
-			beginSPITransaction();
-		}
-		r+=dr;g+=dg; b+=db;
+		endSPITransaction();
 	}
-	endSPITransaction();
 }
 
 // fillRectHGradient	- fills area with horizontal gradient
 void ILI9488_t3::fillRectHGradient(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color1, uint16_t color2)
 {
-	// rudimentary clipping (drawChar w/big text requires this)
-	if((x >= _width) || (y >= _height)) return;
-	if((x + w - 1) >= _width)  w = _width  - x;
-	if((y + h - 1) >= _height) h = _height - y;
+	x+=_originx;
+	y+=_originy;
+
+	// Rectangular clipping 
+	if((x >= _displayclipx2) || (y >= _displayclipy2)) return;
+	if(x < _displayclipx1) {	w -= (_displayclipx1-x); x = _displayclipx1; 	}
+	if(y < _displayclipy1) {	h -= (_displayclipy1 - y); y = _displayclipy1; 	}
+	if((x + w - 1) >= _displayclipx2)  w = _displayclipx2  - x;
+	if((y + h - 1) >= _displayclipy2) h = _displayclipy2 - y;
 	
 	int16_t r1, g1, b1, r2, g2, b2, dr, dg, db, r, g, b;
+	uint16_t color;
 	color565toRGB14(color1,r1,g1,b1);
 	color565toRGB14(color2,r2,g2,b2);
-	dr=(r2-r1)/h; dg=(g2-g1)/h; db=(b2-b1)/h;
+	dr=(r2-r1)/w; dg=(g2-g1)/w; db=(b2-b1)/w;
 	r=r1;g=g1;b=b1;	
-
-	// TODO: this can result in a very long transaction time
-	// should break this into multiple transactions, even though
-	// it'll cost more overhead, so we don't stall other SPI libs
-	beginSPITransaction();
-	setAddr(x, y, x+w-1, y+h-1);
-	writecommand_cont(ILI9488_RAMWR);
-	for(y=h; y>0; y--) {
-		uint16_t color;
-		for(x=w; x>1; x--) {
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (_use_fbtft) {
+		uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		for (;h>0; h--) {
+			uint16_t * pfbPixel = pfbPixel_row;
+			for (int i = 0 ;i < w; i++) {
+				*pfbPixel++ = RGB14tocolor565(r,g,b);
+				r+=dr;g+=dg; b+=db;
+			}
+			pfbPixel_row += _width;
+			r=r1;g=g1;b=b1;
+		}
+	} else 
+	#endif
+	{
+		beginSPITransaction();
+		setAddr(x, y, x+w-1, y+h-1);
+		writecommand_cont(ILI9488_RAMWR);
+		for(y=h; y>0; y--) {
+			for(x=w; x>1; x--) {
+				color = RGB14tocolor565(r,g,b);
+				write16BitColor(color);
+				r+=dr;g+=dg; b+=db;
+			}
 			color = RGB14tocolor565(r,g,b);
-			//write16BitColor(color);
-			write16BitColor(color);
-			r+=dr;g+=dg; b+=db;
+			writedata16_last(color);
+			if (y > 1 && (y & 1)) {
+				endSPITransaction();
+				beginSPITransaction();
+			}
+			r=r1;g=g1;b=b1;
 		}
-		color = RGB14tocolor565(r,g,b);
-		//write16BitColor(color, true);
-		write16BitColor(color, true);
-		if (y > 1 && (y & 1)) {
-			endSPITransaction();
-			beginSPITransaction();
-		}
-		r=r1;g=g1;b=b1;
+		endSPITransaction();
 	}
-	endSPITransaction();
 }
 
 // fillScreenVGradient - fills screen with vertical gradient

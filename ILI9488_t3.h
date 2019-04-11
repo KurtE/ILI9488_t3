@@ -604,6 +604,7 @@ class ILI9488_t3 : public Print
 		waitTransmitComplete(mcr);
 	}
 #endif
+
 	void HLine(int16_t x, int16_t y, int16_t w, uint16_t color)
 	  __attribute__((always_inline)) {
 		#ifdef ENABLE_ILI9488_FRAMEBUFFER
@@ -625,6 +626,7 @@ class ILI9488_t3 : public Print
 		writecommand_cont(ILI9488_RAMWR);
 		do { write16BitColor(color); } while (--w > 0);
 	}
+	
 	void VLine(int16_t x, int16_t y, int16_t h, uint16_t color)
 	  __attribute__((always_inline)) {
 		#ifdef ENABLE_ILI9488_FRAMEBUFFER
@@ -646,6 +648,7 @@ class ILI9488_t3 : public Print
 		writecommand_cont(ILI9488_RAMWR);
 		do { write16BitColor(color); } while (--h > 0);
 	}
+	
 	void Pixel(int16_t x, int16_t y, uint16_t color)
 	  __attribute__((always_inline)) {
 	    x+=_originx;
@@ -663,6 +666,7 @@ class ILI9488_t3 : public Print
 		writecommand_cont(ILI9488_RAMWR);
 		write16BitColor(color);
 	}
+	
 	void drawFontBits(bool opaque, uint32_t bits, uint32_t numbits, int32_t x, int32_t y, uint32_t repeat);};
 
 #ifndef swap
