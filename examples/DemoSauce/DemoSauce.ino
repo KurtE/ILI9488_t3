@@ -17,8 +17,8 @@
 // https://github.com/zkarcher/demosauce
 
 #include "SPI.h"
-#include "ILI9341_t3.h"
-#include "font_Arial.h"
+#include "ILI9488_t3.h"
+#include "ILI9488_t3_font_Arial.h"
 
 #include "FrameParams.h"
 
@@ -50,16 +50,14 @@ const uint_fast8_t DEBUG_ANIM_INDEX = 0;
 const boolean DEBUG_TRANSITION = false;  // dev: set to true for short animation durations
 const int_fast8_t DEBUG_TRANSITION_INDEX = -1;  // Supports -1: chooses a transition at random
 
-const int_fast16_t DEFAULT_ANIM_TIME = 20.0f * 1000.0f;  // ms
+const int_fast16_t DEFAULT_ANIM_TIME = 10.0f * 1000.0f;  // ms
 
 // TFT pins
 const uint8_t TFT_DC = 9;
 const uint8_t TFT_CS = 10;
-const uint8_t MIC_PIN = 14;
-const uint8_t BACKLIGHT_PIN = 23;
 
 // Use hardware SPI (#13, #12, #11) and the above for CS/DC
-ILI9341_t3 tft = ILI9341_t3(TFT_CS, TFT_DC);
+ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC,23);
 FrameParams frameParams;
 long previousMillis = 0;
 
@@ -103,21 +101,16 @@ int_fast8_t getActiveAnimIndex() {
 }
 
 void setup() {
-  // Backlight
-  pinMode( BACKLIGHT_PIN, OUTPUT );
-  analogWrite( BACKLIGHT_PIN, 1023 );
 
-  // Microphone
-  pinMode( MIC_PIN, INPUT );
 
   tft.begin();
   tft.setRotation( 3 );
-  tft.fillScreen(ILI9341_BLACK);
+  tft.fillScreen(ILI9488_BLACK);
 
   // Serial
   if( DO_BENCHMARKS ) {
     Serial.begin( SERIAL_BAUD_RATE );
-    tft.setTextColor(ILI9341_YELLOW);
+    tft.setTextColor(ILI9488_YELLOW);
     tft.setFont(Arial_18);
     tft.setCursor(98, 42);
     tft.print("waiting for");
@@ -126,10 +119,10 @@ void setup() {
     tft.print("Arduino");
     tft.setCursor(60, 120);
     tft.print("Serial Monitor");
-    tft.setTextColor(ILI9341_GREEN);
+    tft.setTextColor(ILI9488_GREEN);
     tft.setFont(Arial_18);
     while (!Serial && millis() < 8000) { // wait for Arduino Serial Monitor
-      tft.fillRect(118, 182, 42, 18, ILI9341_BLACK);
+      tft.fillRect(118, 182, 42, 18, ILI9488_BLACK);
       tft.setCursor(118, 182);
       tft.print((8000.0 - (float)millis()) / 1000.0, 1);
       tft.print(" sec");
@@ -236,7 +229,7 @@ void loop() {
   uint_fast16_t sum = 0;
 
   for( uint_fast8_t s=0; s<SAMPLES_PER_FRAME; s++ ) {
-    uint_fast16_t sample = abs( analogRead( MIC_PIN ) - 511 );
+    uint_fast16_t sample = abs( random(0,1023) - 511 );
     frameParams.audioPeak = max( frameParams.audioPeak, sample );
     sum += sample;
   }
