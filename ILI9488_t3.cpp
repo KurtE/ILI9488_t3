@@ -157,9 +157,9 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 
 			// Quick write out the data;
 			while (pftbft < pfbtft_end) {
-				writedata16_cont(*pftbft++);
+				write16BitColor(*pftbft++, true);
 			}
-			writedata16_last(*pftbft);
+			write16BitColor(*pftbft);
 		} else {
 			// setup just to output the clip rectangle area. 
 			setAddr(_displayclipx1, _displayclipy1, _displayclipx2-1, _displayclipy2-1);
@@ -174,9 +174,9 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 					writedata16_cont(*pfbPixel++);
 				}
 				if (y < (_displayclipy2-1))
-					writedata16_cont(*pfbPixel);
+					write16BitColor(*pfbPixel);
 				else	
-					writedata16_last(*pfbPixel);
+					write16BitColor(*pfbPixel, true);
 				pfbPixel_row += _width;	// setup for the next row. 
 			}
 		}
