@@ -2,7 +2,7 @@
 #define TRANSITION_SCROLL_H__
 
 #include <Arduino.h>
-#include "ILI9341_t3.h"
+#include "ILI9488_t3.h"
 #include "MathUtil.h"
 #include "BaseTransition.h"
 
@@ -19,9 +19,9 @@ class TransitionScroll : public BaseTransition {
 public:
 	TransitionScroll() : BaseTransition() {};
 
-  void init( ILI9341_t3 tft );
-	void restart( ILI9341_t3 tft, uint_fast16_t color );
-	void perFrame( ILI9341_t3 tft, FrameParams frameParams );
+  void init( ILI9488_t3 tft );
+	void restart( ILI9488_t3 tft, uint_fast16_t color );
+	void perFrame( ILI9488_t3 tft, FrameParams frameParams );
   boolean isComplete();
 
 private:
@@ -32,11 +32,11 @@ private:
 	uint16_t * _pixels;
 };
 
-void TransitionScroll::init( ILI9341_t3 tft ) {
+void TransitionScroll::init( ILI9488_t3 tft ) {
 	_pixels = (uint16_t*)malloc( sizeof(uint_fast16_t) * tft.width() );
 }
 
-void TransitionScroll::restart( ILI9341_t3 tft, uint_fast16_t inColor ) {
+void TransitionScroll::restart( ILI9488_t3 tft, uint_fast16_t inColor ) {
   //uint_fast16_t w = tft.width();
   //uint_fast16_t h = tft.height();
 	_phase = 0;
@@ -65,7 +65,7 @@ float easeInOutQuart( float p ) {
   return 1.0f - (p2*p2*p2*p2) * 0.5f;
 }
 
-void TransitionScroll::perFrame( ILI9341_t3 tft, FrameParams frameParams ) {
+void TransitionScroll::perFrame( ILI9488_t3 tft, FrameParams frameParams ) {
   uint_fast16_t w = (uint_fast16_t)tft.width();
   uint_fast16_t h = (uint_fast16_t)tft.height();
 
