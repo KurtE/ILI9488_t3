@@ -57,6 +57,11 @@
 #define WIDTH  ILI9488_TFTWIDTH
 #define HEIGHT ILI9488_TFTHEIGHT
 
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
+#define CBALLOC (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH*2)
+#define	COUNT_WORDS_WRITE  ((ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)/SCREEN_DMA_NUM_SETTINGS) // Note I know the divide will give whole number
+#endif
+
 // Constructor when using hardware SPI.  Faster, but must use SPI pins
 // specific to each board type (e.g. 11,13 for Uno, 51,52 for Mega, etc.)
 ILI9488_t3::ILI9488_t3(uint8_t cs, uint8_t dc, uint8_t rst, uint8_t mosi, uint8_t sclk, uint8_t miso)
@@ -83,6 +88,105 @@ ILI9488_t3::ILI9488_t3(uint8_t cs, uint8_t dc, uint8_t rst, uint8_t mosi, uint8_
 	setClipRect();
 	setOrigin();
 }
+
+//=======================================================================
+// Add optinal support for using frame buffer to speed up complex outputs
+//=======================================================================
+void ILI9488_t3::setFrameBuffer(uint16_t *frame_buffer) 
+{
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	_pfbtft = frame_buffer;
+	if (_pfbtft != NULL) {
+		memset(_pfbtft, 0, ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH*2);
+	}
+
+	#endif	
+}
+
+uint8_t ILI9488_t3::useFrameBuffer(boolean b)		// use the frame buffer?  First call will allocate
+{
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+
+	if (b) {
+		// First see if we need to allocate buffer
+		if (_pfbtft == NULL) {
+			// Hack to start frame buffer on 32 byte boundary
+			_we_allocated_buffer = (uint16_t *)malloc(CBALLOC+32);
+			if (_we_allocated_buffer == NULL)
+				return 0;	// failed 
+			_pfbtft = (uint16_t*) (((uintptr_t)_we_allocated_buffer + 32) & ~ ((uintptr_t) (31)));
+			memset(_pfbtft, 0, CBALLOC);	
+		}
+		_use_fbtft = 1;
+	} else 
+		_use_fbtft = 0;
+
+	return _use_fbtft;	
+	#else
+	return 0;
+	#endif
+}
+
+void ILI9488_t3::freeFrameBuffer(void)						// explicit call to release the buffer
+{
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (_we_allocated_buffer) {
+		free(_we_allocated_buffer);
+		_pfbtft = NULL;
+		_use_fbtft = 0;	// make sure the use is turned off
+		_we_allocated_buffer = NULL;
+	}
+	#endif
+}
+void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
+{
+	// Not sure if better here to check flag or check existence of buffer.
+	// Will go by buffer as maybe can do interesting things?
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (_use_fbtft) {
+		beginSPITransaction();
+		if (_standard) {
+			// Doing full window. 
+			setAddr(0, 0, _width-1, _height-1);
+			writecommand_cont(ILI9488_RAMWR);
+
+			// BUGBUG doing as one shot.  Not sure if should or not or do like
+			// main code and break up into transactions...
+			uint16_t *pfbtft_end = &_pfbtft[(ILI9488_TFTWIDTH*ILI9488_TFTHEIGHT)-1];	// setup 
+			uint16_t *pftbft = _pfbtft;
+
+			// Quick write out the data;
+			while (pftbft < pfbtft_end) {
+				writedata16_cont(*pftbft++);
+			}
+			writedata16_last(*pftbft);
+		} else {
+			// setup just to output the clip rectangle area. 
+			setAddr(_displayclipx1, _displayclipy1, _displayclipx2-1, _displayclipy2-1);
+			writecommand_cont(ILI9488_RAMWR);
+
+			// BUGBUG doing as one shot.  Not sure if should or not or do like
+			// main code and break up into transactions...
+			uint16_t * pfbPixel_row = &_pfbtft[ _displayclipy1*_width + _displayclipx1];
+			for (uint16_t y = _displayclipy1; y < _displayclipy2; y++) {
+				uint16_t * pfbPixel = pfbPixel_row;
+				for (uint16_t x = _displayclipx1; x < (_displayclipx2-1); x++) {
+					writedata16_cont(*pfbPixel++);
+				}
+				if (y < (_displayclipy2-1))
+					writedata16_cont(*pfbPixel);
+				else	
+					writedata16_last(*pfbPixel);
+				pfbPixel_row += _width;	// setup for the next row. 
+			}
+		}
+		endSPITransaction();
+	}
+	#endif
+}			 
+
+
+
 
 void ILI9488_t3::setAddrWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
@@ -255,7 +359,7 @@ void ILI9488_t3::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
 	if((x + w - 1) >= _displayclipx2)  w = _displayclipx2  - x;
 	if((y + h - 1) >= _displayclipy2) h = _displayclipy2 - y;
 
-	#ifdef ENABLE_ILI9341_FRAMEBUFFER
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
 		if ((x&1) || (w&1)) {
 			uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
@@ -2438,7 +2542,7 @@ int16_t ILI9488_t3::drawString(const String& string, int poX, int poY)
 int16_t ILI9488_t3::drawString1(char string[], int16_t len, int poX, int poY)
 {
   int16_t sumX = 0;
-  uint8_t padding = 1, baseline = 0;
+  uint8_t padding = 1;
   
   uint16_t cwidth = strPixelLen(string); // Find the pixel width of the string in the font
   uint16_t cheight = textsize*8;
