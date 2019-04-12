@@ -2165,7 +2165,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 			int screen_x;
 			while (screen_y < origin_y) {
 				for (screen_x = start_x_min; screen_x <= end_x; screen_x++) {
-					writedata16_cont(textbgcolor);
+					write16BitColor(textbgcolor);
 				}
 				screen_y++;
 			}
@@ -2195,7 +2195,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 						for (screen_x = start_x; screen_x < origin_x; screen_x++) {
 							if ((screen_x >= _displayclipx1) && (screen_x < _displayclipx2)) {
 								//Serial.write('-');
-								writedata16_cont(textbgcolor);
+								write16BitColor(textbgcolor);
 							}
 						}
 					}	
@@ -2210,7 +2210,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 						if ((screen_y >= _displayclipy1) && (screen_y < _displayclipy2)) {
 							while (bit_mask) {
 								if ((screen_x >= _displayclipx1) && (screen_x < _displayclipx2)) {
-									writedata16_cont((bits & bit_mask) ? textcolor : textbgcolor);
+									write16BitColor((bits & bit_mask) ? textcolor : textbgcolor);
 									//Serial.write((bits & bit_mask) ? '*' : '.');
 								}
 								bit_mask = bit_mask >> 1;
@@ -2224,7 +2224,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 					if ((screen_y >= _displayclipy1) && (screen_y < _displayclipy2)) {
 						// output bg color and right hand side
 						while (screen_x++ <= end_x) {
-							writedata16_cont(textbgcolor);
+							write16BitColor(textbgcolor);
 							//Serial.write('+');
 						}
 						//Serial.println();
@@ -2238,9 +2238,9 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 			screen_x = (end_y + 1 - screen_y) * (end_x + 1 - start_x_min); // How many bytes we need to still output
 			//Serial.printf("Clear Below: %d\n", screen_x);
 			while (screen_x-- > 1) {
-				writedata16_cont(textbgcolor);
+				write16BitColor(textbgcolor);
 			}
-			writedata16_last(textbgcolor);
+			write16BitColor(textbgcolor, true);
 			endSPITransaction();
 		}
 
