@@ -171,7 +171,7 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 			for (uint16_t y = _displayclipy1; y < _displayclipy2; y++) {
 				uint16_t * pfbPixel = pfbPixel_row;
 				for (uint16_t x = _displayclipx1; x < (_displayclipx2-1); x++) {
-					writedata16_cont(*pfbPixel++);
+					write16BitColor(*pfbPixel++);
 				}
 				if (y < (_displayclipy2-1))
 					write16BitColor(*pfbPixel);
@@ -1107,11 +1107,11 @@ void ILI9488_t3::writeRect4BPP(int16_t x, int16_t y, int16_t w, int16_t h, const
 	writecommand_cont(ILI9488_RAMWR);
 	for(y=h; y>0; y--) {
 		for(x=w; x>2; x-=2) {
-			writedata16_cont(palette[((*pixels)>>4)&0xF]);
-			writedata16_cont(palette[(*pixels++)&0xF]);
+			write16BitColor(palette[((*pixels)>>4)&0xF]);
+			write16BitColor(palette[(*pixels++)&0xF]);
 		}
-		writedata16_cont(palette[((*pixels)>>4)&0xF]);
-		writedata16_last(palette[(*pixels++)&0xF]);
+		write16BitColor(palette[((*pixels)>>4)&0xF]);
+		write16BitColor(palette[(*pixels++)&0xF], true);
 	}
 	endSPITransaction();
 }
@@ -1128,15 +1128,15 @@ void ILI9488_t3::writeRect2BPP(int16_t x, int16_t y, int16_t w, int16_t h, const
 	for(y=h; y>0; y--) {
 		for(x=w; x>4; x-=4) {
 			//unrolled loop might be faster?
-			writedata16_cont(palette[((*pixels)>>6)&0x3]);
-			writedata16_cont(palette[((*pixels)>>4)&0x3]);
-			writedata16_cont(palette[((*pixels)>>2)&0x3]);
-			writedata16_cont(palette[(*pixels++)&0x3]);
+			write16BitColor(palette[((*pixels)>>6)&0x3]);
+			write16BitColor(palette[((*pixels)>>4)&0x3]);
+			write16BitColor(palette[((*pixels)>>2)&0x3]);
+			write16BitColor(palette[(*pixels++)&0x3]);
 		}
-		writedata16_cont(palette[((*pixels)>>6)&0x3]);
-		writedata16_cont(palette[((*pixels)>>4)&0x3]);
-		writedata16_cont(palette[((*pixels)>>2)&0x3]);
-		writedata16_last(palette[(*pixels++)&0x3]);
+		write16BitColor(palette[((*pixels)>>6)&0x3]);
+		write16BitColor(palette[((*pixels)>>4)&0x3]);
+		write16BitColor(palette[((*pixels)>>2)&0x3]);
+		write16BitColor(palette[(*pixels++)&0x3], true);
 	}
 	endSPITransaction();
 }
@@ -1153,23 +1153,23 @@ void ILI9488_t3::writeRect1BPP(int16_t x, int16_t y, int16_t w, int16_t h, const
 	for(y=h; y>0; y--) {
 		for(x=w; x>8; x-=8) {
 			//unrolled loop might be faster?
-			writedata16_cont(palette[((*pixels)>>7)&0x1]);
-			writedata16_cont(palette[((*pixels)>>6)&0x1]);
-			writedata16_cont(palette[((*pixels)>>5)&0x1]);
-			writedata16_cont(palette[((*pixels)>>4)&0x1]);
-			writedata16_cont(palette[((*pixels)>>3)&0x1]);
-			writedata16_cont(palette[((*pixels)>>2)&0x1]);
-			writedata16_cont(palette[((*pixels)>>1)&0x1]);
-			writedata16_cont(palette[(*pixels++)&0x1]);
+			write16BitColor(palette[((*pixels)>>7)&0x1]);
+			write16BitColor(palette[((*pixels)>>6)&0x1]);
+			write16BitColor(palette[((*pixels)>>5)&0x1]);
+			write16BitColor(palette[((*pixels)>>4)&0x1]);
+			write16BitColor(palette[((*pixels)>>3)&0x1]);
+			write16BitColor(palette[((*pixels)>>2)&0x1]);
+			write16BitColor(palette[((*pixels)>>1)&0x1]);
+			write16BitColor(palette[(*pixels++)&0x1]);
 		}
-		writedata16_cont(palette[((*pixels)>>7)&0x1]);
-		writedata16_cont(palette[((*pixels)>>6)&0x1]);
-		writedata16_cont(palette[((*pixels)>>5)&0x1]);
-		writedata16_cont(palette[((*pixels)>>4)&0x1]);
-		writedata16_cont(palette[((*pixels)>>3)&0x1]);
-		writedata16_cont(palette[((*pixels)>>2)&0x1]);
-		writedata16_cont(palette[((*pixels)>>1)&0x1]);
-		writedata16_last(palette[(*pixels++)&0x1]);
+		write16BitColor(palette[((*pixels)>>7)&0x1]);
+		write16BitColor(palette[((*pixels)>>6)&0x1]);
+		write16BitColor(palette[((*pixels)>>5)&0x1]);
+		write16BitColor(palette[((*pixels)>>4)&0x1]);
+		write16BitColor(palette[((*pixels)>>3)&0x1]);
+		write16BitColor(palette[((*pixels)>>2)&0x1]);
+		write16BitColor(palette[((*pixels)>>1)&0x1]);
+		write16BitColor(palette[(*pixels++)&0x1], true);
 	}
 	endSPITransaction();
 }
@@ -1845,7 +1845,7 @@ void ILI9488_t3::drawChar(int16_t x, int16_t y, unsigned char c,
 					}
 				}
 				for (xr=0; xr < size; xr++) {
-					writedata16_cont(bgcolor);
+					write16BitColor(bgcolor);
 				}
 			}
 			mask = mask << 1;
@@ -2240,7 +2240,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 			while (screen_x-- > 1) {
 				write16BitColor(textbgcolor);
 			}
-			write16BitColor(textbgcolor, true);
+			write16BitColor(textbgcolor,true);
 			endSPITransaction();
 		}
 
