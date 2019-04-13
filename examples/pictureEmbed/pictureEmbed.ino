@@ -6,7 +6,7 @@
 // https://forum.pjrc.com/threads/32601-SPI-Library-Issue-w-ILI9341-TFT-amp-PN532-NFC-Module-on-Teensy-3-2?p=94534&viewfull=1#post94534
 
 #include "SPI.h"
-#include "ILI9341_t3.h"
+#include "ILI9488_t3.h"
 
 // Converted to code with:
 // http://www.rinkydinkelectronics.com/t_imageconverter565.php
@@ -28,14 +28,14 @@
 
     tft.writeRect(0, 0, image_name.width, image_name.height, (uint16_t*)(image_name.pixel_data));
 
-  See also https://forum.pjrc.com/threads/35575-Export-for-ILI9341_t3-with-GIMP 
+  See also https://forum.pjrc.com/threads/35575-Export-for-ILI9488_t3-with-GIMP 
 */
 
 
 // Normal Connections
 #define TFT_DC       9
 #define TFT_CS      10
-#define TFT_RST    255  // 255 = unused, connect to 3.3V
+#define TFT_RST      8  // 255 = unused, connect to 3.3V
 #define TFT_MOSI    11
 #define TFT_SCLK    13
 #define TFT_MISO    12
@@ -48,12 +48,12 @@
 //#define TFT_SCLK    14
 //#define TFT_MISO    12
 
-ILI9341_t3 tft = ILI9341_t3(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCLK, TFT_MISO);
+ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCLK, TFT_MISO);
 
 void setup() {
   tft.begin();
   tft.setRotation(3);
-  tft.fillScreen(ILI9341_BLACK);
+  tft.fillScreen(ILI9488_BLACK);
   tft.writeRect(32, 33, 256, 174, (uint16_t*)picture);
 }
 

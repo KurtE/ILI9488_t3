@@ -51,12 +51,28 @@
 
 #ifdef __cplusplus
 #include "Arduino.h"
+#include <DMAChannel.h>
 #endif
 
 #if defined(__MKL26Z64__)
 #error "Sorry, ILI9488_t3 does not work with Teensy LC.  Use Adafruit_ILI9488."
 #elif defined(__AVR__)
 #error "Sorry, ILI9488_t3 does not work with Teensy 2.0 or Teensy++ 2.0.  Use Adafruit_ILI9488."
+#endif
+
+#define  ILI9488_USE_DMAMEM
+
+// Allow us to enable or disable capabilities, particully Frame Buffer and Clipping for speed and size
+#ifndef DISABLE_ILI9488_FRAMEBUFFER
+#if defined(__MK64FX512__) || defined(__MK66FX1M0__)
+#define ENABLE_ILI9488_FRAMEBUFFER
+//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9341_TFTHEIGHT * ILI9341_TFTWIDTH) / 65536UL))+1)
+#define SCREEN_DMA_NUM_SETTINGS 3 // see if making it a constant value makes difference...
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
+#define ENABLE_ILI9488_FRAMEBUFFER
+//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9341_TFTHEIGHT * ILI9341_TFTWIDTH) / 65536UL))+1)
+#define SCREEN_DMA_NUM_SETTINGS 4 // see if making it a constant value makes difference...
+#endif
 #endif
 
 #define ILI9488_TFTWIDTH  320
@@ -272,6 +288,13 @@ class ILI9488_t3 : public Print
 	//					width must be at least 8 pixels
 	void writeRect1BPP(int16_t x, int16_t y, int16_t w, int16_t h, const uint8_t *pixels, const uint16_t * palette );
 
+		// writeRectNBPP - 	write N(1, 2, 4, 8) bit per pixel paletted bitmap
+	//					bitmap data in array at pixels
+	//  Currently writeRect1BPP, writeRect2BPP, writeRect4BPP use this to do all of the work. 
+	// 
+	void writeRectNBPP(int16_t x, int16_t y, int16_t w, int16_t h,  uint8_t bits_per_pixel, 
+		const uint8_t *pixels, const uint16_t * palette );
+	
 	// from Adafruit_GFX.h
 	void drawCircle(int16_t x0, int16_t y0, int16_t r, uint16_t color);
 	void drawCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername, uint16_t color);
@@ -352,6 +375,14 @@ class ILI9488_t3 : public Print
 	void scrollTextArea(uint8_t scrollSize);
 	void resetScrollBackgroundColor(uint16_t color);
 
+	// added support to use optional Frame buffer
+	void	setFrameBuffer(uint16_t *frame_buffer);
+	uint16_t *getFrameBuffer() {return _pfbtft;}
+	uint8_t useFrameBuffer(boolean b);		// use the frame buffer?  First call will allocate
+	void	freeFrameBuffer(void);			// explicit call to release the buffer
+	void	updateScreen(void);				// call to say update the screen now. 
+
+	
  protected:
 #if defined(KINETISK)
  	KINETISK_SPI_t *_pkinetisk_spi;
@@ -411,6 +442,14 @@ class ILI9488_t3 : public Print
     uint8_t _cspinmask;
     volatile uint8_t *_csport;
 #endif
+
+//#ifdef ENABLE_ILI9488_FRAMEBUFFER
+    // Add support for optional frame buffer
+    uint16_t	*_pfbtft;						// Optional Frame buffer 
+    uint8_t		_use_fbtft;						// Are we in frame buffer mode?
+    uint16_t	*_we_allocated_buffer;			// We allocated the buffer; 
+//#endif
+
 	void setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 	  __attribute__((always_inline)) {
 		writecommand_cont(ILI9488_CASET); // Column addr set
@@ -420,6 +459,7 @@ class ILI9488_t3 : public Print
 		writedata16_cont(y0);   // YSTART
 		writedata16_cont(y1);   // YEND
 	}
+	
 
 //----------------------------------------------------------------------
 // Processor Specific stuff

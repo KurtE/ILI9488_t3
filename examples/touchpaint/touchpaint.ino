@@ -16,7 +16,7 @@
 
 #include <SPI.h>
 #include <Wire.h>      // this is needed even tho we aren't using it
-#include <ILI9341_t3.h>
+#include <ILI9488_t3.h>
 #include <Adafruit_STMPE610.h>
 
 // This is calibration data for the raw touch data to the screen coordinates
@@ -32,7 +32,7 @@ Adafruit_STMPE610 ts = Adafruit_STMPE610(STMPE_CS);
 // The display also uses hardware SPI, plus #9 & #10
 #define TFT_CS 10
 #define TFT_DC  9
-ILI9341_t3 tft = ILI9341_t3(TFT_CS, TFT_DC);
+ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC);
 
 // Size of the color selection boxes and the paintbrush size
 #define BOXSIZE 40
@@ -53,19 +53,19 @@ void setup(void) {
   }
   Serial.println("Touchscreen started");
   
-  tft.fillScreen(ILI9341_BLACK);
+  tft.fillScreen(ILI9488_BLACK);
   
   // make the color selection boxes
-  tft.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
-  tft.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_YELLOW);
-  tft.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_GREEN);
-  tft.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_CYAN);
-  tft.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_BLUE);
-  tft.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_MAGENTA);
+  tft.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9488_RED);
+  tft.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9488_YELLOW);
+  tft.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9488_GREEN);
+  tft.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9488_CYAN);
+  tft.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9488_BLUE);
+  tft.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9488_MAGENTA);
  
   // select the current color 'red'
-  tft.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-  currentcolor = ILI9341_RED;
+  tft.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9488_WHITE);
+  currentcolor = ILI9488_RED;
 }
 
 
@@ -105,38 +105,38 @@ void loop()
      oldcolor = currentcolor;
 
      if (p.x < BOXSIZE) { 
-       currentcolor = ILI9341_RED; 
-       tft.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = ILI9488_RED; 
+       tft.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9488_WHITE);
      } else if (p.x < BOXSIZE*2) {
-       currentcolor = ILI9341_YELLOW;
-       tft.drawRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = ILI9488_YELLOW;
+       tft.drawRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9488_WHITE);
      } else if (p.x < BOXSIZE*3) {
-       currentcolor = ILI9341_GREEN;
-       tft.drawRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = ILI9488_GREEN;
+       tft.drawRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9488_WHITE);
      } else if (p.x < BOXSIZE*4) {
-       currentcolor = ILI9341_CYAN;
-       tft.drawRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = ILI9488_CYAN;
+       tft.drawRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9488_WHITE);
      } else if (p.x < BOXSIZE*5) {
-       currentcolor = ILI9341_BLUE;
-       tft.drawRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = ILI9488_BLUE;
+       tft.drawRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9488_WHITE);
      } else if (p.x < BOXSIZE*6) {
-       currentcolor = ILI9341_MAGENTA;
-       tft.drawRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = ILI9488_MAGENTA;
+       tft.drawRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9488_WHITE);
      }
 
      if (oldcolor != currentcolor) {
-        if (oldcolor == ILI9341_RED) 
-          tft.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
-        if (oldcolor == ILI9341_YELLOW) 
-          tft.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_YELLOW);
-        if (oldcolor == ILI9341_GREEN) 
-          tft.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_GREEN);
-        if (oldcolor == ILI9341_CYAN) 
-          tft.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_CYAN);
-        if (oldcolor == ILI9341_BLUE) 
-          tft.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_BLUE);
-        if (oldcolor == ILI9341_MAGENTA) 
-          tft.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_MAGENTA);
+        if (oldcolor == ILI9488_RED) 
+          tft.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9488_RED);
+        if (oldcolor == ILI9488_YELLOW) 
+          tft.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9488_YELLOW);
+        if (oldcolor == ILI9488_GREEN) 
+          tft.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9488_GREEN);
+        if (oldcolor == ILI9488_CYAN) 
+          tft.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9488_CYAN);
+        if (oldcolor == ILI9488_BLUE) 
+          tft.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9488_BLUE);
+        if (oldcolor == ILI9488_MAGENTA) 
+          tft.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9488_MAGENTA);
      }
   }
   if (((p.y-PENRADIUS) > BOXSIZE) && ((p.y+PENRADIUS) < tft.height())) {

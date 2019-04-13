@@ -14,7 +14,7 @@
  ****************************************************/
 
 
-#include <ILI9341_t3.h> // Hardware-specific library
+#include <ILI9488_t3.h> // Hardware-specific library
 #include <SPI.h>
 #include <SD.h>
 
@@ -25,7 +25,7 @@
 
 #define TFT_DC  9
 #define TFT_CS 10
-ILI9341_t3 tft = ILI9341_t3(TFT_CS, TFT_DC);
+ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC);
 
 #define SD_CS 4
 
@@ -35,10 +35,10 @@ void setup(void) {
   delay(200);
 
   tft.begin();
-  tft.fillScreen(ILI9341_BLUE);
+  tft.fillScreen(ILI9488_BLUE);
 
   Serial.begin(9600);
-  tft.setTextColor(ILI9341_WHITE);
+  tft.setTextColor(ILI9488_WHITE);
   tft.setTextSize(2);
   tft.println(F("Waiting for Arduino Serial Monitor..."));
   while (!Serial) {
@@ -56,7 +56,7 @@ void setup(void) {
 }
 
 void loop() {
-  tft.fillScreen(ILI9341_GREEN);
+  tft.fillScreen(ILI9488_GREEN);
   bmpDraw("purple.bmp", 0, 0);
   delay(5000);
   bmpDraw("flowers.bmp", 0, 0);
