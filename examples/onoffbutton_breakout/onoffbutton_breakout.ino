@@ -5,7 +5,7 @@
 //
 #include <SPI.h>
 #include <Wire.h>
-#include <ILI9341_t3.h>
+#include <ILI9488_t3.h>
 #include <TouchScreen.h>
 
 //Touchscreen X+ X- Y+ Y- pins
@@ -31,7 +31,7 @@ TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
 #define TFT_CS 10
 #define TFT_DC  9
-ILI9341_t3 tft = ILI9341_t3(TFT_CS, TFT_DC);
+ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC);
 
 boolean RecordOn = false;
 
@@ -52,16 +52,16 @@ boolean RecordOn = false;
 
 void drawFrame()
 {
-  tft.drawRect(FRAME_X, FRAME_Y, FRAME_W, FRAME_H, ILI9341_BLACK);
+  tft.drawRect(FRAME_X, FRAME_Y, FRAME_W, FRAME_H, ILI9488_BLACK);
 }
 
 void redBtn()
 { 
-  tft.fillRect(REDBUTTON_X, REDBUTTON_Y, REDBUTTON_W, REDBUTTON_H, ILI9341_RED);
-  tft.fillRect(GREENBUTTON_X, GREENBUTTON_Y, GREENBUTTON_W, GREENBUTTON_H, ILI9341_BLUE);
+  tft.fillRect(REDBUTTON_X, REDBUTTON_Y, REDBUTTON_W, REDBUTTON_H, ILI9488_RED);
+  tft.fillRect(GREENBUTTON_X, GREENBUTTON_Y, GREENBUTTON_W, GREENBUTTON_H, ILI9488_BLUE);
   drawFrame();
   tft.setCursor(GREENBUTTON_X + 6 , GREENBUTTON_Y + (GREENBUTTON_H/2));
-  tft.setTextColor(ILI9341_WHITE);
+  tft.setTextColor(ILI9488_WHITE);
   tft.setTextSize(2);
   tft.println("ON");
   RecordOn = false;
@@ -69,11 +69,11 @@ void redBtn()
 
 void greenBtn()
 {
-  tft.fillRect(GREENBUTTON_X, GREENBUTTON_Y, GREENBUTTON_W, GREENBUTTON_H, ILI9341_GREEN);
-  tft.fillRect(REDBUTTON_X, REDBUTTON_Y, REDBUTTON_W, REDBUTTON_H, ILI9341_BLUE);
+  tft.fillRect(GREENBUTTON_X, GREENBUTTON_Y, GREENBUTTON_W, GREENBUTTON_H, ILI9488_GREEN);
+  tft.fillRect(REDBUTTON_X, REDBUTTON_Y, REDBUTTON_W, REDBUTTON_H, ILI9488_BLUE);
   drawFrame();
   tft.setCursor(REDBUTTON_X + 6 , REDBUTTON_Y + (REDBUTTON_H/2));
-  tft.setTextColor(ILI9341_WHITE);
+  tft.setTextColor(ILI9488_WHITE);
   tft.setTextSize(2);
   tft.println("OFF");
   RecordOn = true;
@@ -84,7 +84,7 @@ void setup(void)
   Serial.begin(9600);
   tft.begin();
 
-  tft.fillScreen(ILI9341_BLUE);
+  tft.fillScreen(ILI9488_BLUE);
   // origin = left,top landscape (USB left upper)
   tft.setRotation(1); 
   redBtn();

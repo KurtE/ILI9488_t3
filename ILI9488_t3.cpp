@@ -1330,7 +1330,7 @@ void ILI9488_t3::writeRectNBPP(int16_t x, int16_t y, int16_t w, int16_t h,  uint
 		uint8_t pixel_shift = row_shift_init;			// Setup mask
 
 		for (int i = 0 ;i < w; i++) {
-			writedata16_cont(palette[((*pixels)>>pixel_shift) & pixel_bit_mask]);
+			write16BitColor(palette[((*pixels)>>pixel_shift) & pixel_bit_mask]);
 			if (!pixel_shift) {
 				pixel_shift = 8 - bits_per_pixel;	//setup next mask
 				pixels++;

@@ -16,21 +16,41 @@
 
 #include "SPI.h"
 #include "ILI9488_t3.h"
+//#define TEENSY64
 
 // For the Adafruit shield, these are the default.
-#define TFT_DC  9
+#if defined(__MK66FX1M0__) && !defined(TEENSY64)
+#define TFT_RST 8
+#define TFT_DC 9
 #define TFT_CS 10
-
-// Use hardware SPI (on Uno, #13, #12, #11) and the above for CS/DC
-ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC, 8);
-
+ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC, TFT_RST);
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
+// On Teensy 4 beta with Paul's breakout out:
+// Using pins (MOSI, MISO, SCK which are labeled on Audio board breakout location
+// which are not in the Normal processor positions
+// Also DC=10(CS), CS=9(BCLK) and RST 23(MCLK)
+#define TFT_RST 23
+#define TFT_DC 9
+#define TFT_CS 10
+ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC, TFT_RST);
+#elif defined(TEENSY64)
+#define TFT_RST 255
+#define TFT_DC 20
+#define TFT_CS 21
+#define TFT_SCK 14
+#define TFT_MISO 39
+#define TFT_MOSI 28
+ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO);
+#else
+#error "This example App will only work with Teensy 3.6 or Teensy 4."
+#endif
 void setup() {
   tft.begin();
   tft.fillScreen(ILI9488_BLACK);
   tft.setTextColor(ILI9488_YELLOW);
   tft.setTextSize(2);
   tft.println("Waiting for Arduino Serial Monitor...");
-
+  tft.setOrigin(0,0);
   Serial.begin(9600);
   while (!Serial) ; // wait for Arduino Serial Monitor
   Serial.println("ILI9488 Test!"); 
@@ -59,19 +79,19 @@ void setup() {
 
   Serial.print(F("Lines                    "));
   Serial.println(testLines(ILI9488_CYAN));
-  delay(200);
+  delay(500);
 
   Serial.print(F("Horiz/Vert Lines         "));
   Serial.println(testFastLines(ILI9488_RED, ILI9488_BLUE));
-  delay(200);
+  delay(500);
 
   Serial.print(F("Rectangles (outline)     "));
   Serial.println(testRects(ILI9488_GREEN));
-  delay(200);
+  delay(500);
 
   Serial.print(F("Rectangles (filled)      "));
   Serial.println(testFilledRects(ILI9488_YELLOW, ILI9488_MAGENTA));
-  delay(200);
+  delay(500);
 
   Serial.print(F("Circles (filled)         "));
   Serial.println(testFilledCircles(10, ILI9488_MAGENTA));
