@@ -376,13 +376,26 @@ class ILI9488_t3 : public Print
 	void resetScrollBackgroundColor(uint16_t color);
 
 	// added support to use optional Frame buffer
-	void	setFrameBuffer(uint16_t *frame_buffer);
-	uint16_t *getFrameBuffer() {return _pfbtft;}
+	void	setFrameBuffer(uint8_t *frame_buffer);
+	uint8_t *getFrameBuffer() {return _pfbtft;}
 	uint8_t useFrameBuffer(boolean b);		// use the frame buffer?  First call will allocate
 	void	freeFrameBuffer(void);			// explicit call to release the buffer
 	void	updateScreen(void);				// call to say update the screen now. 
 
+	// Support for user to set Pallet. 
+	void	setPallet(uint16_t *pal, uint16_t count);	// <= 256
+	void	colorsArePalletIndex(boolean b) {_colors_are_index = b;}
+	boolean	colorsArePalletIndex() {return _colors_are_index;}
 	
+	// probably not called directly... 
+	uint8_t doActualConvertColorToIndex(uint16_t color);  
+
+	inline uint8_t mapColorToPalletIndex(uint16_t color) 
+		{
+			if (_pallet && _colors_are_index) return (uint8_t)color;
+			return doActualConvertColorToIndex(color);		
+		}
+		
  protected:
 #if defined(KINETISK)
  	KINETISK_SPI_t *_pkinetisk_spi;
@@ -445,9 +458,15 @@ class ILI9488_t3 : public Print
 
 //#ifdef ENABLE_ILI9488_FRAMEBUFFER
     // Add support for optional frame buffer
-    uint16_t	*_pfbtft;						// Optional Frame buffer 
+    uint8_t		*_pfbtft;						// Optional Frame buffer 
     uint8_t		_use_fbtft;						// Are we in frame buffer mode?
-    uint16_t	*_we_allocated_buffer;			// We allocated the buffer; 
+    uint8_t		*_we_allocated_buffer;			// We allocated the buffer; 
+
+    uint16_t	*_pallet;						// Support for user to set Pallet. 
+    uint16_t	_pallet_size;					// How big is the pallet
+    uint16_t	_pallet_count;					// how many items are in it...
+    boolean		_colors_are_index;				// are the values passed in index or color?
+
 //#endif
 
 	void setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
