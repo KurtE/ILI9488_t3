@@ -468,7 +468,7 @@ void ILI9488_t3::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t h, u
 			for(x=w; x>1; x--) {
 				write16BitColor(color);
 			}
-			writedata16_last(color);
+			write16BitColor(color, true);
 			if (y > 1 && (y & 1)) {
 				endSPITransaction();
 				beginSPITransaction();
@@ -523,7 +523,7 @@ void ILI9488_t3::fillRectHGradient(int16_t x, int16_t y, int16_t w, int16_t h, u
 				r+=dr;g+=dg; b+=db;
 			}
 			color = RGB14tocolor565(r,g,b);
-			writedata16_last(color);
+			write16BitColor(color, true);
 			if (y > 1 && (y & 1)) {
 				endSPITransaction();
 				beginSPITransaction();
@@ -1330,7 +1330,7 @@ void ILI9488_t3::writeRectNBPP(int16_t x, int16_t y, int16_t w, int16_t h,  uint
 		uint8_t pixel_shift = row_shift_init;			// Setup mask
 
 		for (int i = 0 ;i < w; i++) {
-			writedata16_cont(palette[((*pixels)>>pixel_shift) & pixel_bit_mask]);
+			write16BitColor(palette[((*pixels)>>pixel_shift) & pixel_bit_mask]);
 			if (!pixel_shift) {
 				pixel_shift = 8 - bits_per_pixel;	//setup next mask
 				pixels++;
