@@ -184,7 +184,7 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 	if (_use_fbtft) {
 		beginSPITransaction();
 		if (_standard) {
-			Serial.printf("Update Screen Standard %x(%x)\n", *_pfbtft, _pallet[*_pfbtft]);
+			//Serial.printf("Update Screen Standard %x(%x)\n", *_pfbtft, _pallet[*_pfbtft]);
 			// Doing full window. 
 			setAddr(0, 0, _width-1, _height-1);
 			writecommand_cont(ILI9488_RAMWR);
@@ -393,7 +393,7 @@ void ILI9488_t3::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
 		uint8_t color_index = mapColorToPalletIndex(color);
-		if (x==0 && y == 0) Serial.printf("fillrect %x %x %x\n", color, color_index, _pallet[color_index]);
+		//if (x==0 && y == 0) Serial.printf("fillrect %x %x %x\n", color, color_index, _pallet[color_index]);
 		if (1 || (x&3) || (w&3)) {
 			uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
 			for (;h>0; h--) {
