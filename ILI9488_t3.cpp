@@ -62,6 +62,30 @@
 #define	COUNT_WORDS_WRITE  ((ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)/SCREEN_DMA_NUM_SETTINGS) // Note I know the divide will give whole number
 #endif
 
+#if defined(__MK66FX1M0__) 
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+//#define DEBUG_ASYNC_UPDATE
+//#define DEBUG_ASYNC_LEDS	// Enable to use digitalWrites to Debug
+#ifdef DEBUG_ASYNC_LEDS
+#define DEBUG_PIN_1 2
+#define DEBUG_PIN_2 3
+#define DEBUG_PIN_3 4
+#endif
+
+
+DMASetting 	ILI9488_t3::_dmasettings[2];
+DMAChannel 	ILI9488_t3::_dmatx;
+#else
+#endif	
+
+ILI9488_t3 *ILI9488_t3::_dmaActiveDisplay = 0;
+volatile uint8_t  	ILI9488_t3::_dma_state = 0;  // Use pointer to this as a way to get back to object...
+volatile uint32_t	ILI9488_t3::_dma_frame_count = 0;	// Can return a frame count...
+volatile uint32_t 	ILI9488_t3::_dma_pixel_index = 0;
+volatile uint16_t	ILI9488_t3::_dma_sub_frame_count = 0;	// Can return a frame count...
+
+
+
 // Constructor when using hardware SPI.  Faster, but must use SPI pins
 // specific to each board type (e.g. 11,13 for Uno, 51,52 for Mega, etc.)
 ILI9488_t3::ILI9488_t3(uint8_t cs, uint8_t dc, uint8_t rst, uint8_t mosi, uint8_t sclk, uint8_t miso)
@@ -1449,7 +1473,7 @@ void ILI9488_t3::begin(void)
 	 	_dcport = 0;
 	 	_dcpinmask = 0;
 	} else {
-		//Serial.println("ILI9488_t3n: Error not DC is not valid hardware CS pin");
+		//Serial.println("ILI9488_t3: Error not DC is not valid hardware CS pin");
 		_dcport = portOutputRegister(_dc);
 		_dcpinmask = digitalPinToBitMask(_dc);
 		pinMode(_dc, OUTPUT);	
@@ -2897,3 +2921,313 @@ bool Adafruit_GFX_Button::contains(int16_t x, int16_t y)
 	return true;
 }
 
+
+//=============================================================================
+// DMA - Async support
+//=============================================================================
+void ILI9488_t3::dmaInterrupt(void) {
+	if (_dmaActiveDisplay)  {
+		_dmaActiveDisplay->process_dma_interrupt();
+	}
+}
+
+
+#ifdef DEBUG_ASYNC_UPDATE
+extern void dumpDMA_TCD(DMABaseClass *dmabc);
+#endif
+
+#define COUNT_SUBFRAMES_PER_FRAME (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH/DMA_PIXELS_OUTPUT_PER_DMA)
+
+void ILI9488_t3::process_dma_interrupt(void) {
+
+#if defined(__MK66FX1M0__) 
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	// T4
+	// lets see if we are done... 
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_2, HIGH);
+#endif
+	_dma_sub_frame_count++;
+	if (_dma_sub_frame_count < COUNT_SUBFRAMES_PER_FRAME)
+	{
+		// We need to fill in the finished buffer with the next set of pixel data
+		if (_dma_sub_frame_count & 1) fillDMApixelBuffer(_dma_pixel_buffer0);
+		else fillDMApixelBuffer(_dma_pixel_buffer1);
+
+		_dmatx.clearInterrupt();
+ 		asm("dsb");
+ 		if (_dma_sub_frame_count == (COUNT_SUBFRAMES_PER_FRAME -1) 
+				&& ((_dma_state & ILI9488_DMA_CONT) == 0) ) {
+			_dmasettings[1].disableOnCompletion();
+		}
+	} else {
+
+		_dma_frame_count++;
+		//Serial.println("\nFrame complete");
+
+		if ((_dma_state & ILI9488_DMA_CONT) == 0) {
+			// We are in single refresh mode or the user has called cancel so
+			// Lets try to release the CS pin
+			// Lets wait until FIFO is not empty
+			// Serial.printf("Before FSR wait: %x %x\n", IMXRT_LPSPI4_S.FSR, IMXRT_LPSPI4_S.SR);
+			//Serial.println("End DMA transfer");
+
+			while (IMXRT_LPSPI4_S.FSR & 0x1f)  ;	// wait until this one is complete
+
+			 //Serial.printf("Before SR busy wait: %x\n", IMXRT_LPSPI4_S.SR);
+			while (IMXRT_LPSPI4_S.SR & LPSPI_SR_MBF)  ;	// wait until this one is complete
+
+			_dmatx.clearComplete();
+			//Serial.println("Restore FCR");
+			IMXRT_LPSPI4_S.FCR = LPSPI_FCR_TXWATER(15); // _spi_fcr_save;	// restore the FSR status... 
+	 		IMXRT_LPSPI4_S.DER = 0;		// DMA no longer doing TX (or RX)
+
+			IMXRT_LPSPI4_S.CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
+			IMXRT_LPSPI4_S.SR = 0x3f00;	// clear out all of the other status...
+
+
+			maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));	// output Command with 8 bits
+			// Serial.printf("Output NOP (SR %x CR %x FSR %x FCR %x %x TCR:%x)\n", IMXRT_LPSPI4_S.SR, IMXRT_LPSPI4_S.CR, IMXRT_LPSPI4_S.FSR, 
+			//	IMXRT_LPSPI4_S.FCR, _spi_fcr_save, IMXRT_LPSPI4_S.TCR);
+	#ifdef DEBUG_ASYNC_LEDS
+			digitalWriteFast(DEBUG_PIN_3, HIGH);
+	#endif
+			_pending_rx_count = 0;	// Make sure count is zero
+			writecommand_last(ILI9488_NOP);
+	#ifdef DEBUG_ASYNC_LEDS
+			digitalWriteFast(DEBUG_PIN_3, LOW);
+	#endif
+
+			// Serial.println("Do End transaction");
+			endSPITransaction();
+			_dma_state &= ~ILI9488_DMA_ACTIVE;
+			_dmaActiveDisplay = 0;	// We don't have a display active any more... 
+
+	 		 //Serial.println("After End transaction");
+
+		} else {
+			// Still going on. - setup to grab pixels from start of frame again...
+			_dma_sub_frame_count = 0;
+			_dma_pixel_index = 0;
+			fillDMApixelBuffer(0);
+		}
+		_dmatx.clearInterrupt();
+	}
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_2, LOW);
+#endif
+#else
+	// T3.5...
+#endif
+}
+
+
+void	ILI9488_t3::initDMASettings(void) 
+{
+	// Serial.printf("initDMASettings called %d\n", _dma_state);
+	if (_dma_state) {  // should test for init, but...
+		return;	// we already init this. 
+	}
+
+	//Serial.println("InitDMASettings");
+#if defined(__MK66FX1M0__) 
+	// T3.6
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	// Now lets setup DMA access to this memory... 
+	// Try to do like T3.6 except not kludge for first word...
+	// Serial.println("DMA initDMASettings - before settings");
+	// Serial.printf("  CWW: %d %d %d\n", CBALLOC, SCREEN_DMA_NUM_SETTINGS, COUNT_WORDS_WRITE);
+	_dmasettings[0].sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
+	_dmasettings[0].destination(IMXRT_LPSPI4_S.TDR);
+	_dmasettings[0].TCD->ATTR_DST = 0;
+	_dmasettings[0].replaceSettingsOnCompletion(_dmasettings[1]);
+	_dmasettings[0].interruptAtCompletion();
+
+	_dmasettings[1].sourceBuffer(_dma_pixel_buffer1, sizeof(_dma_pixel_buffer1));
+	_dmasettings[1].destination(IMXRT_LPSPI4_S.TDR);
+	_dmasettings[1].TCD->ATTR_DST = 0;
+	_dmasettings[1].replaceSettingsOnCompletion(_dmasettings[0]);
+	_dmasettings[1].interruptAtCompletion();
+
+	// Setup DMA main object
+	//Serial.println("Setup _dmatx");
+	// Serial.println("DMA initDMASettings - before dmatx");
+	_dmatx.begin(true);
+	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX);
+	_dmatx = _dmasettings[0];
+	_dmatx.attachInterrupt(dmaInterrupt);
+#else
+#endif
+	_dma_state = ILI9488_DMA_INIT;  // Should be first thing set!
+	// Serial.println("DMA initDMASettings - end");
+
+}
+#ifdef DEBUG_ASYNC_UPDATE
+void dumpDMA_TCD(DMABaseClass *dmabc)
+{
+	Serial.printf("%x %x:", (uint32_t)dmabc, (uint32_t)dmabc->TCD);
+
+	Serial.printf("SA:%x SO:%d AT:%x NB:%x SL:%d DA:%x DO: %d CI:%x DL:%x CS:%x BI:%x\n", (uint32_t)dmabc->TCD->SADDR,
+		dmabc->TCD->SOFF, dmabc->TCD->ATTR, dmabc->TCD->NBYTES, dmabc->TCD->SLAST, (uint32_t)dmabc->TCD->DADDR, 
+		dmabc->TCD->DOFF, dmabc->TCD->CITER, dmabc->TCD->DLASTSGA, dmabc->TCD->CSR, dmabc->TCD->BITER);
+}
+#endif
+
+void ILI9488_t3::dumpDMASettings() {
+#ifdef DEBUG_ASYNC_UPDATE
+#if defined(__MK66FX1M0__) 
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	// Serial.printf("DMA dump TCDs %d\n", _dmatx.channel);
+	dumpDMA_TCD(&_dmatx);
+	dumpDMA_TCD(&_dmasettings[0]);
+	dumpDMA_TCD(&_dmasettings[1]);
+#else
+#endif	
+#endif
+
+}
+
+// Fill the pixel buffer with data... 
+void ILI9488_t3::fillDMApixelBuffer(uint8_t *dma_buffer_pointer)
+{
+	uint8_t *frame_buffer_pixel_ptr = &_pfbtft[_dma_pixel_index];
+
+	for (uint16_t i = 0; i < DMA_PIXELS_OUTPUT_PER_DMA; i++) {
+		uint16_t color = _pallet[*frame_buffer_pixel_ptr++]; 	// extract the 16 bit color
+		uint8_t r = (color & 0xF800) >> 11;
+		uint8_t g = (color & 0x07E0) >> 5;
+		uint8_t b = color & 0x001F;
+
+		r = (r * 255) / 31;
+		g = (g * 255) / 63;
+		b = (b * 255) / 31;
+	
+		*dma_buffer_pointer++ = r;
+		*dma_buffer_pointer++ = g;
+		*dma_buffer_pointer++ = b;
+	}
+	_dma_pixel_index += DMA_PIXELS_OUTPUT_PER_DMA;
+}
+
+bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update the screen now.
+{
+	// Not sure if better here to check flag or check existence of buffer.
+	// Will go by buffer as maybe can do interesting things?
+	// BUGBUG:: only handles full screen so bail on the rest of it...
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (!_use_fbtft) return false;
+
+
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_1, HIGH);
+#endif
+	// Init DMA settings. 
+	initDMASettings();
+
+	// Don't start one if already active.
+	if (_dma_state & ILI9488_DMA_ACTIVE) {
+	#ifdef DEBUG_ASYNC_LEDS
+		digitalWriteFast(DEBUG_PIN_1, LOW);
+	#endif
+		return false;
+	}
+
+#if defined(__MK66FX1M0__) 
+	//==========================================
+	// T3.6
+	//==========================================
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	//==========================================
+	// T4
+	//==========================================
+
+	_dmasettings[1].TCD->CSR &= ~( DMA_TCD_CSR_DREQ);  // Don't disable on completion.
+	if (!update_cont) {
+		// In this case we will only run through once...
+		_dma_state &= ~ILI9488_DMA_CONT;
+	}
+#ifdef DEBUG_ASYNC_UPDATE
+	dumpDMASettings();
+#endif
+
+	beginSPITransaction();
+	// Doing full window. 
+	// We need to convert the first page of colors.  Could/should hack up
+	// some of the above code to allow this to be done while waiting for
+	// the startup SPI output to finish. 
+	_dma_pixel_index = 0;
+	_dma_frame_count = 0;  // Set frame count back to zero. 
+	_dma_sub_frame_count = 0;	
+	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
+	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
+
+	setAddr(0, 0, _width-1, _height-1);
+	writecommand_last(ILI9488_RAMWR);
+
+
+
+	// Update TCR to 16 bit mode. and output the first entry.
+	_spi_fcr_save = IMXRT_LPSPI4_S.FCR;	// remember the FCR
+	IMXRT_LPSPI4_S.FCR = 0;	// clear water marks... 	
+	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_RXMSK /*| LPSPI_TCR_CONT*/);
+//	IMXRT_LPSPI4_S.CFGR1 |= LPSPI_CFGR1_NOSTALL;
+//	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
+ 	IMXRT_LPSPI4_S.DER = LPSPI_DER_TDDE;
+	IMXRT_LPSPI4_S.SR = 0x3f00;	// clear out all of the other status...
+
+  	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX );
+
+ 	_dmatx = _dmasettings[0];
+
+  	_dmatx.begin(false);
+  	_dmatx.enable();
+
+	_dmaActiveDisplay = this;
+	if (update_cont) {
+		_dma_state |= ILI9488_DMA_CONT;
+	} else {
+		_dma_state &= ~ILI9488_DMA_CONT;
+
+	}
+
+	_dma_state |= ILI9488_DMA_ACTIVE;
+#else
+#endif	
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_1, LOW);
+#endif
+	return true;
+    #else
+    return false;     // no frame buffer so will never start... 
+	#endif
+
+}			 
+
+void ILI9488_t3::endUpdateAsync() {
+	// make sure it is on
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (_dma_state & ILI9488_DMA_CONT) {
+		_dma_state &= ~ILI9488_DMA_CONT; // Turn of the continueous mode
+#if defined(__MK66FX1M0__) 
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+		_dmasettings[1].disableOnCompletion();
+#endif
+	}
+	#endif
+}
+	
+void ILI9488_t3::waitUpdateAsyncComplete(void) 
+{
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_3, HIGH);
+#endif
+
+	while ((_dma_state & ILI9488_DMA_ACTIVE)) {
+		// asm volatile("wfi");
+	};
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_3, LOW);
+#endif
+	#endif	
+}

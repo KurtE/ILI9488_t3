@@ -66,11 +66,11 @@
 #ifndef DISABLE_ILI9488_FRAMEBUFFER
 #if defined(__MK64FX512__) || defined(__MK66FX1M0__)
 #define ENABLE_ILI9488_FRAMEBUFFER
-//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9341_TFTHEIGHT * ILI9341_TFTWIDTH) / 65536UL))+1)
+//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9488_TFTHEIGHT * ILI9488_TFTWIDTH) / 65536UL))+1)
 #define SCREEN_DMA_NUM_SETTINGS 3 // see if making it a constant value makes difference...
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
 #define ENABLE_ILI9488_FRAMEBUFFER
-//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9341_TFTHEIGHT * ILI9341_TFTWIDTH) / 65536UL))+1)
+//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9488_TFTHEIGHT * ILI9488_TFTWIDTH) / 65536UL))+1)
 #define SCREEN_DMA_NUM_SETTINGS 4 // see if making it a constant value makes difference...
 #endif
 #endif
@@ -184,6 +184,10 @@ typedef struct {
 	unsigned char line_space;
 	unsigned char cap_height;
 } ILI9488_t3_font_t;
+
+#define ILI9488_DMA_INIT	0x01 	// We have init the Dma settings
+#define ILI9488_DMA_CONT	0x02 	// continuous mode
+#define ILI9488_DMA_ACTIVE  0x80    // Is currently active
 
 //These enumerate the text plotting alignment (reference datum point)
 #define TL_DATUM 0 // Top left (default)
@@ -396,6 +400,21 @@ class ILI9488_t3 : public Print
 			return doActualConvertColorToIndex(color);		
 		}
 		
+	bool	updateScreenAsync(bool update_cont = false);	// call to say update the screen optinoally turn into continuous mode. 
+	void	waitUpdateAsyncComplete(void);
+	void	endUpdateAsync();			 // Turn of the continueous mode fla
+	void	dumpDMASettings();
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	uint32_t frameCount() {return _dma_frame_count; }
+	boolean	asyncUpdateActive(void)  {return (_dma_state & ILI9488_DMA_ACTIVE);}
+	void	initDMASettings(void);
+	#else
+	uint32_t frameCount() {return 0; }
+	boolean	asyncUpdateActive(void)  {return false;}
+	uint32_t frameCount() {return 0; }
+	#endif
+
+
  protected:
 #if defined(KINETISK)
  	KINETISK_SPI_t *_pkinetisk_spi;
@@ -466,6 +485,29 @@ class ILI9488_t3 : public Print
     uint16_t	_pallet_size;					// How big is the pallet
     uint16_t	_pallet_count;					// how many items are in it...
     boolean		_colors_are_index;				// are the values passed in index or color?
+
+    // Add DMA support. 
+	static  ILI9488_t3 		*_dmaActiveDisplay;  // Use pointer to this as a way to get back to object...
+	static volatile uint8_t  	_dma_state;  		// DMA status
+	static volatile uint32_t	_dma_frame_count;	// Can return a frame count...
+	#if defined(__MK66FX1M0__) 
+	#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	// Going to try it similar to T4.
+	static DMASetting 	_dmasettings[2];
+	static DMAChannel  	_dmatx;
+	uint32_t 			_spi_fcr_save;		// save away previous FCR register value
+	#else
+	#endif	
+	static void dmaInterrupt(void);
+	void process_dma_interrupt(void);
+	void fillDMApixelBuffer(uint8_t *buffer_ptr);
+
+	enum {DMA_PIXELS_OUTPUT_PER_DMA=80};  // How many pixels at a time?
+	uint8_t _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+	uint8_t _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+	static volatile uint32_t _dma_pixel_index;
+	static volatile uint16_t	_dma_sub_frame_count;	// Can return a frame count...
+
 
 //#endif
 
