@@ -3207,7 +3207,7 @@ void ILI9488_t3::endUpdateAsync() {
 		_dma_state &= ~ILI9488_DMA_CONT; // Turn of the continueous mode
 #if defined(__MK66FX1M0__) 
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
-		_dmasettings[1].disableOnCompletion();
+		// _dmasettings[1].disableOnCompletion();
 #endif
 	}
 	#endif
