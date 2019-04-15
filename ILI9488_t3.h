@@ -491,7 +491,7 @@ class ILI9488_t3 : public Print
 	static volatile uint8_t  	_dma_state;  		// DMA status
 	static volatile uint32_t	_dma_frame_count;	// Can return a frame count...
 	#if defined(__MK66FX1M0__) 
-	static DMASetting 	_dmasettings[2];
+	static DMASetting 	_dmasettings[3];
 	static DMAChannel  	_dmatx;
 	#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
 	// Going to try it similar to T4.

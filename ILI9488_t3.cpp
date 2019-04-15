@@ -63,7 +63,7 @@
 #endif
 
 #if defined(__MK66FX1M0__) 
-DMASetting 	ILI9488_t3::_dmasettings[2];
+DMASetting 	ILI9488_t3::_dmasettings[3];
 DMAChannel 	ILI9488_t3::_dmatx;
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
 //#define DEBUG_ASYNC_UPDATE
@@ -3058,7 +3058,7 @@ void	ILI9488_t3::initDMASettings(void)
 	_dmatx = _dmasettings[0];
 	_dmatx.attachInterrupt(dmaInterrupt);
 #elif defined(__MK66FX1M0__) 
-	_dmasettings[0].sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
+	_dmasettings[0].sourceBuffer(&_dma_pixel_buffer0[3], sizeof(_dma_pixel_buffer0)-3);
 	_dmasettings[0].destination(KINETISK_SPI0.PUSHR);
 	_dmasettings[0].TCD->ATTR_DST = 0;
 	_dmasettings[0].replaceSettingsOnCompletion(_dmasettings[1]);
@@ -3067,9 +3067,14 @@ void	ILI9488_t3::initDMASettings(void)
 	_dmasettings[1].sourceBuffer(_dma_pixel_buffer1, sizeof(_dma_pixel_buffer1));
 	_dmasettings[1].destination(KINETISK_SPI0.PUSHR);
 	_dmasettings[1].TCD->ATTR_DST = 0;
-	_dmasettings[1].replaceSettingsOnCompletion(_dmasettings[0]);
+	_dmasettings[1].replaceSettingsOnCompletion(_dmasettings[2]);
 	_dmasettings[1].interruptAtCompletion();
 
+	_dmasettings[2].sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
+	_dmasettings[2].destination(KINETISK_SPI0.PUSHR);
+	_dmasettings[2].TCD->ATTR_DST = 0;
+	_dmasettings[2].replaceSettingsOnCompletion(_dmasettings[1]);
+	_dmasettings[2].interruptAtCompletion();
 	// Setup DMA main object
 	//Serial.println("Setup _dmatx");
 	// Serial.println("DMA initDMASettings - before dmatx");
@@ -3161,6 +3166,7 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 		return false;
 	}
 
+	_dmatx = _dmasettings[0];
 	_dmasettings[1].TCD->CSR &= ~( DMA_TCD_CSR_DREQ);  // Don't disable on completion.
 	if (!update_cont) {
 		// In this case we will only run through once...
