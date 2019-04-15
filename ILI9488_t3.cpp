@@ -3003,8 +3003,8 @@ void ILI9488_t3::process_dma_interrupt(void) {
 		} else {
 			// Still going on. - setup to grab pixels from start of frame again...
 			_dma_sub_frame_count = 0;
-			_dma_pixel_index = 0;
-			fillDMApixelBuffer(0);
+			//_dma_pixel_index = 0;
+			fillDMApixelBuffer(_dma_pixel_buffer1);
 		}
 	}
 #ifdef DEBUG_ASYNC_LEDS
@@ -3103,7 +3103,12 @@ bool ILI9488_t3::fillDMApixelBuffer(uint8_t *dma_buffer_pointer)
 		*dma_buffer_pointer++ = b;
 	}
 	_dma_pixel_index += DMA_PIXELS_OUTPUT_PER_DMA;
-	return _dma_pixel_index >= (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH);
+	if (_dma_pixel_index >= (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)) {
+		_dma_pixel_index = 0;
+		return true;
+	}
+
+	return false;
 }
 
 bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update the screen now.
