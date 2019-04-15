@@ -500,7 +500,7 @@ class ILI9488_t3 : public Print
 	#endif	
 	static void dmaInterrupt(void);
 	void process_dma_interrupt(void);
-	void fillDMApixelBuffer(uint8_t *buffer_ptr);
+	bool fillDMApixelBuffer(uint8_t *buffer_ptr);
 
 	enum {DMA_PIXELS_OUTPUT_PER_DMA=80};  // How many pixels at a time?
 	uint8_t _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));

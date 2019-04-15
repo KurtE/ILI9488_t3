@@ -2951,13 +2951,8 @@ void ILI9488_t3::process_dma_interrupt(void) {
 	if (_dma_sub_frame_count < COUNT_SUBFRAMES_PER_FRAME)
 	{
 		// We need to fill in the finished buffer with the next set of pixel data
-		if (_dma_sub_frame_count & 1) fillDMApixelBuffer(_dma_pixel_buffer0);
-		else fillDMApixelBuffer(_dma_pixel_buffer1);
-
-		_dmatx.clearInterrupt();
- 		asm("dsb");
- 		if (_dma_sub_frame_count == (COUNT_SUBFRAMES_PER_FRAME -1) 
-				&& ((_dma_state & ILI9488_DMA_CONT) == 0) ) {
+		bool frame_complete =  fillDMApixelBuffer((_dma_sub_frame_count & 1) ? _dma_pixel_buffer0 : _dma_pixel_buffer1);
+ 		if (frame_complete && ((_dma_state & ILI9488_DMA_CONT) == 0) ) {
 			_dmasettings[1].disableOnCompletion();
 		}
 	} else {
@@ -3011,7 +3006,6 @@ void ILI9488_t3::process_dma_interrupt(void) {
 			_dma_pixel_index = 0;
 			fillDMApixelBuffer(0);
 		}
-		_dmatx.clearInterrupt();
 	}
 #ifdef DEBUG_ASYNC_LEDS
 	digitalWriteFast(DEBUG_PIN_2, LOW);
@@ -3019,6 +3013,8 @@ void ILI9488_t3::process_dma_interrupt(void) {
 #else
 	// T3.5...
 #endif
+	_dmatx.clearInterrupt();
+	asm("dsb");
 }
 
 
@@ -3088,7 +3084,7 @@ void ILI9488_t3::dumpDMASettings() {
 }
 
 // Fill the pixel buffer with data... 
-void ILI9488_t3::fillDMApixelBuffer(uint8_t *dma_buffer_pointer)
+bool ILI9488_t3::fillDMApixelBuffer(uint8_t *dma_buffer_pointer)
 {
 	uint8_t *frame_buffer_pixel_ptr = &_pfbtft[_dma_pixel_index];
 
@@ -3107,6 +3103,7 @@ void ILI9488_t3::fillDMApixelBuffer(uint8_t *dma_buffer_pointer)
 		*dma_buffer_pointer++ = b;
 	}
 	_dma_pixel_index += DMA_PIXELS_OUTPUT_PER_DMA;
+	return _dma_pixel_index >= (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH);
 }
 
 bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update the screen now.
@@ -3158,10 +3155,9 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	_dma_pixel_index = 0;
 	_dma_frame_count = 0;  // Set frame count back to zero. 
 	_dma_sub_frame_count = 0;	
-	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
-	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
 
 	setAddr(0, 0, _width-1, _height-1);
+	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
 	writecommand_last(ILI9488_RAMWR);
 
 
@@ -3181,6 +3177,7 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 
   	_dmatx.begin(false);
   	_dmatx.enable();
+	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
 
 	_dmaActiveDisplay = this;
 	if (update_cont) {
