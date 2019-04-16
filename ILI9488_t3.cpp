@@ -1509,6 +1509,13 @@ void ILI9488_t3::begin(void)
 		digitalWrite(_rst, HIGH);
 		delay(150);
 	}
+
+	// REAL HACK TO GET SPI information!!!!
+  	uint32_t *pa = (uint32_t*)((void*)spi_port);
+	_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+    #ifdef KINETISK
+	_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+	#endif
 	/*
 	uint8_t x = readcommand8(ILI9488_RDMODE);
 	Serial.print("\nDisplay Power Mode: 0x"); Serial.println(x, HEX);
@@ -3067,7 +3074,7 @@ void	ILI9488_t3::initDMASettings(void)
 	//Serial.println("Setup _dmatx");
 	// Serial.println("DMA initDMASettings - before dmatx");
 	_dmatx.begin(true);
-	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX);
+	_dmatx.triggerAtHardwareEvent(_spi_hardware->tx_dma_channel);
 	_dmatx = _dmasettings[0];
 	_dmatx.attachInterrupt(dmaInterrupt);
 #elif defined(__MK66FX1M0__) 
@@ -3092,7 +3099,7 @@ void	ILI9488_t3::initDMASettings(void)
 	//Serial.println("Setup _dmatx");
 	// Serial.println("DMA initDMASettings - before dmatx");
 	_dmatx.begin(true);
-	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_SPI0_TX);
+	_dmatx.triggerAtHardwareEvent(_spi_hardware->tx_dma_channel);
 	_dmatx = _dmasettings[0];
 	_dmatx.attachInterrupt(dmaInterrupt);
 #else
@@ -3217,7 +3224,7 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
  	_pimxrt_spi->DER = LPSPI_DER_TDDE;
 	_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
 
-  	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX );
+  	//_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX );
 
  	_dmatx = _dmasettings[0];
 
@@ -3409,7 +3416,7 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 		do {
 			sr = _pkinetisk_spi->SR;
 			if (sr & 0xF0) tmp = _pkinetisk_spi->POPR;  // drain RX FIFO
-		} while ((sr & (15 << 12)) > (3 << 12));
+		} while ((sr & (15 << 12)) > ((_fifo_size-1) << 12));
 	}
 	void ILI9488_t3::waitFifoEmpty(void) {
 		uint32_t sr;

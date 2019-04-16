@@ -432,9 +432,11 @@ class ILI9488_t3 : public Print
 
  protected:
     SPIClass                *spi_port;
+	SPIClass::SPI_Hardware_t *_spi_hardware;
     //uint32_t                _spi_port_memorymap = 0;
 #if defined(KINETISK)
  	KINETISK_SPI_t *_pkinetisk_spi;
+ 	uint8_t			_fifo_size;
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
 	//inline IMXRT_LPSPI_t & port() { return (*(IMXRT_LPSPI_t *)0x403A0000); }
 	IMXRT_LPSPI_t *_pimxrt_spi;
