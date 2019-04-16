@@ -94,11 +94,13 @@ ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, u
 {
 	spi_port = SPIWire;
 #if defined(__IMXRT1052__) || defined(__IMXRT1062__)
-	_spi_port_memorymap = 0x403A0000;
+	_pimxrt_spi = &IMXRT_LPSPI4_S; //0x403A0000;
 #elif defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
-	if ( SPIWire == (SPIClass*)&SPI ) _spi_port_memorymap = 0x4002C000;
-	if ( SPIWire == (SPIClass*)&SPI1 ) _spi_port_memorymap = 0x4002D000;
-	if ( SPIWire == (SPIClass*)&SPI2 ) _spi_port_memorymap = 0x400AC000;
+	if ( SPIWire == (SPIClass*)&SPI ) _pkinetisk_spi = &KINETISK_SPI0;  // 0x4002C000;
+    #if defined(__MK64FX512__) || defined(__MK66FX1M0__)
+	if ( SPIWire == (SPIClass*)&SPI1 ) _pkinetisk_spi = &KINETISK_SPI1; //0x4002D000;
+	if ( SPIWire == (SPIClass*)&SPI2 ) _pkinetisk_spi = &KINETISK_SPI2; //0x400AC000;
+	#endif
 #elif defined(KINETISL)
 	if ( SPIWire == (SPIClass*)&SPI ) _spi_port_memorymap = 0x40076000;
 	if ( SPIWire == (SPIClass*)&SPI1 ) _spi_port_memorymap = 0x40077000;
@@ -292,12 +294,12 @@ void ILI9488_t3::write16BitColor(uint16_t color, bool last_pixel){
   uint32_t color24 = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
   if (last_pixel)  {
 	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23));
-	IMXRT_LPSPI4_S.TDR = color24;
+	_pimxrt_spi->TDR = color24;
 	_pending_rx_count++;	//
 	waitTransmitComplete();
   } else {
 	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
-	IMXRT_LPSPI4_S.TDR = color24;
+	_pimxrt_spi->TDR = color24;
 	_pending_rx_count++;	//
 	waitFifoNotFull();
   }
@@ -675,18 +677,18 @@ uint8_t ILI9488_t3::readdata(void)
        // Try to work directly with SPI registers...
        // First wait until output queue is empty
         uint16_t wTimeout = 0xffff;
-        while ((((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) & (15 << 12)) && (--wTimeout)) ; // wait until empty
+        while (((_pkinetisk_spi->SR) & (15 << 12)) && (--wTimeout)) ; // wait until empty
         
-//       	(*(KINETISK_SPI_t *)_spi_port_memorymap).MCR |= SPI_MCR_CLR_RXF; // discard any received data
-//		(*(KINETISK_SPI_t *)_spi_port_memorymap).SR = SPI_SR_TCF;
+//       	_pkinetisk_spi->MCR |= SPI_MCR_CLR_RXF; // discard any received data
+//		_pkinetisk_spi->SR = SPI_SR_TCF;
         
         // Transfer a 0 out... 
         writedata8_cont(0);   
         
         // Now wait until completed. 
         wTimeout = 0xffff;
-        while ((((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) & (15 << 12)) && (--wTimeout)) ; // wait until empty
-        r = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;  // get the received byte... should check for it first...
+        while (((_pkinetisk_spi->SR) & (15 << 12)) && (--wTimeout)) ; // wait until empty
+        r = _pkinetisk_spi->POPR;  // get the received byte... should check for it first...
     return r;
 }
  */
@@ -702,48 +704,49 @@ uint8_t ILI9488_t3::readcommand8(uint8_t c, uint8_t index)
     uint8_t r=0;
 
     beginSPITransaction();
-    while ((((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) & (15 << 12)) && (--wTimeout)) ; // wait until empty
+
+    while (((_pkinetisk_spi->SR) & (15 << 12)) && (--wTimeout)) ; // wait until empty
 
     // Make sure the last frame has been sent...
-    (*(KINETISK_SPI_t *)_spi_port_memorymap).SR = SPI_SR_TCF;   // dlear it out;
+    _pkinetisk_spi->SR = SPI_SR_TCF;   // dlear it out;
     wTimeout = 0xffff;
-    while (!(((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) & SPI_SR_TCF) && (--wTimeout)) ; // wait until it says the last frame completed
+    while (!((_pkinetisk_spi->SR) & SPI_SR_TCF) && (--wTimeout)) ; // wait until it says the last frame completed
 
     // clear out any current received bytes
     wTimeout = 0x10;    // should not go more than 4...
-    while (((((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) >> 4) & 0xf) && (--wTimeout))  {
-        r = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;
+    while ((((_pkinetisk_spi->SR) >> 4) & 0xf) && (--wTimeout))  {
+        r = _pkinetisk_spi->POPR;
     }
 
     //writecommand(0xD9); // sekret command
-	(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = 0xD9 | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
-//	while ((((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) & (15 << 12)) > (3 << 12)) ; // wait if FIFO full
+	_pkinetisk_spi->PUSHR = 0xD9 | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
+//	while (((_pkinetisk_spi->SR) & (15 << 12)) > (3 << 12)) ; // wait if FIFO full
 
     // writedata(0x10 + index);
-	(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = (0x10 + index) | (pcs_data << 16) | SPI_PUSHR_CTAS(0);
-//	while ((((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) & (15 << 12)) > (3 << 12)) ; // wait if FIFO full
+	_pkinetisk_spi->PUSHR = (0x10 + index) | (pcs_data << 16) | SPI_PUSHR_CTAS(0);
+//	while (((_pkinetisk_spi->SR) & (15 << 12)) > (3 << 12)) ; // wait if FIFO full
 
     // writecommand(c);
-   	(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = c | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
-//	while ((((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) & (15 << 12)) > (3 << 12)) ; // wait if FIFO full
+   	_pkinetisk_spi->PUSHR = c | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
+//	while (((_pkinetisk_spi->SR) & (15 << 12)) > (3 << 12)) ; // wait if FIFO full
 
     // readdata
-	(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0);
-//	while ((((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) & (15 << 12)) > (3 << 12)) ; // wait if FIFO full
+	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0);
+//	while (((_pkinetisk_spi->SR) & (15 << 12)) > (3 << 12)) ; // wait if FIFO full
 
     // Now wait until completed.
     wTimeout = 0xffff;
-    while ((((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) & (15 << 12)) && (--wTimeout)) ; // wait until empty
+    while (((_pkinetisk_spi->SR) & (15 << 12)) && (--wTimeout)) ; // wait until empty
 
     // Make sure the last frame has been sent...
-    (*(KINETISK_SPI_t *)_spi_port_memorymap).SR = SPI_SR_TCF;   // dlear it out;
+    _pkinetisk_spi->SR = SPI_SR_TCF;   // dlear it out;
     wTimeout = 0xffff;
-    while (!(((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) & SPI_SR_TCF) && (--wTimeout)) ; // wait until it says the last frame completed
+    while (!((_pkinetisk_spi->SR) & SPI_SR_TCF) && (--wTimeout)) ; // wait until it says the last frame completed
 
     wTimeout = 0x10;    // should not go more than 4...
     // lets get all of the values on the FIFO
-    while (((((*(KINETISK_SPI_t *)_spi_port_memorymap).SR) >> 4) & 0xf) && (--wTimeout))  {
-        r = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;
+    while ((((_pkinetisk_spi->SR) >> 4) & 0xf) && (--wTimeout))  {
+        r = _pkinetisk_spi->POPR;
     }
     endSPITransaction();
     return r;  // get the received byte... should check for it first...
@@ -753,29 +756,29 @@ uint8_t ILI9488_t3::readcommand8(uint8_t c, uint8_t index)
 
     beginSPITransaction(ILI9488_SPICLOCK_READ);
     // Lets assume that queues are empty as we just started transaction.
-	IMXRT_LPSPI4_S.CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
+	_pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
     //writecommand(0xD9); // sekret command
     maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
-	IMXRT_LPSPI4_S.TDR = 0xD9;
+	_pimxrt_spi->TDR = 0xD9;
 
     // writedata(0x10 + index);
 	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
-	IMXRT_LPSPI4_S.TDR = 0x10 + index;
+	_pimxrt_spi->TDR = 0x10 + index;
 
     // writecommand(c);
     maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
-	IMXRT_LPSPI4_S.TDR = c;
+	_pimxrt_spi->TDR = c;
 
     // readdata
 	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7));
-	IMXRT_LPSPI4_S.TDR = 0;
+	_pimxrt_spi->TDR = 0;
 
     // Now wait until completed.
     wTimeout = 0xffff;
     uint8_t rx_count = 4;
     while (rx_count && wTimeout) {
-        if ((IMXRT_LPSPI4_S.RSR & LPSPI_RSR_RXEMPTY) == 0)  {
-            r =IMXRT_LPSPI4_S.RDR;  // Read any pending RX bytes in
+        if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0)  {
+            r =_pimxrt_spi->RDR;  // Read any pending RX bytes in
             rx_count--; //decrement count of bytes still levt
         }
     }
@@ -837,22 +840,22 @@ uint16_t ILI9488_t3::readPixel(int16_t x, int16_t y)
 	waitTransmitComplete();
 
 	// Push 4 bytes over SPI
-	(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
+	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
 	waitFifoEmpty();    // wait for both queues to be empty.
 
-	(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
-	(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
-	(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_EOQ;
+	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
+	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
+	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_EOQ;
 
 	// Wait for End of Queue
-	while (((*(KINETISK_SPI_t *)_spi_port_memorymap).SR & SPI_SR_EOQF) == 0) ;
-	(*(KINETISK_SPI_t *)_spi_port_memorymap).SR = SPI_SR_EOQF;  // make sure it is clear
+	while ((_pkinetisk_spi->SR & SPI_SR_EOQF) == 0) ;
+	_pkinetisk_spi->SR = SPI_SR_EOQF;  // make sure it is clear
 
 	// Read Pixel Data
-	dummy = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;	// Read a DUMMY byte of GRAM
-	r = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;		// Read a RED byte of GRAM
-	g = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;		// Read a GREEN byte of GRAM
-	b = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;		// Read a BLUE byte of GRAM
+	dummy = _pkinetisk_spi->POPR;	// Read a DUMMY byte of GRAM
+	r = _pkinetisk_spi->POPR;		// Read a RED byte of GRAM
+	g = _pkinetisk_spi->POPR;		// Read a GREEN byte of GRAM
+	b = _pkinetisk_spi->POPR;		// Read a BLUE byte of GRAM
 
 	endSPITransaction();
 	return color565(r,g,b);
@@ -901,27 +904,27 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 	writecommand_cont(ILI9488_RAMRD); // read from RAM
 
 	// transmit a DUMMY byte before the color bytes
-	(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
+	_pkinetisk_spi->PUSHR = 0 | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
 
 	// skip values returned by the queued up transfers and the current in-flight transfer
-	uint32_t sr = (*(KINETISK_SPI_t *)_spi_port_memorymap).SR;
+	uint32_t sr = _pkinetisk_spi->SR;
 	uint8_t skipCount = ((sr >> 4) & 0xF) + ((sr >> 12) & 0xF) + 1;
 
 	while (txCount || rxCount) {
 		// transmit another byte if possible
-		//if (txCount && (((*(KINETISK_SPI_t *)_spi_port_memorymap).SR & 0xF000) >> 12) < SPIClass::hardware().queue_size()) {
-		if (txCount && (((*(KINETISK_SPI_t *)_spi_port_memorymap).SR & 0xF000) >> 12) < 4) {
+		//if (txCount && ((_pkinetisk_spi->SR & 0xF000) >> 12) < SPIClass::hardware().queue_size()) {
+		if (txCount && ((_pkinetisk_spi->SR & 0xF000) >> 12) < 4) {
 			txCount--;
 			if (txCount) {
-				(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = READ_PIXEL_PUSH_BYTE | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
+				_pkinetisk_spi->PUSHR = READ_PIXEL_PUSH_BYTE | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
 			} else {
-				(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = READ_PIXEL_PUSH_BYTE | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_EOQ;
+				_pkinetisk_spi->PUSHR = READ_PIXEL_PUSH_BYTE | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_EOQ;
 			}
 		}
 
 		// receive another byte if possible, and either skip it or store the color
-		if (rxCount && ((*(KINETISK_SPI_t *)_spi_port_memorymap).SR & 0xF0)) {
-			rgb[rgbIdx] = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;
+		if (rxCount && (_pkinetisk_spi->SR & 0xF0)) {
+			rgb[rgbIdx] = _pkinetisk_spi->POPR;
 
 			if (skipCount) {
 				skipCount--;
@@ -937,8 +940,8 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 	}
 
 	// wait for End of Queue
-	while (((*(KINETISK_SPI_t *)_spi_port_memorymap).SR & SPI_SR_EOQF) == 0) ;
-	(*(KINETISK_SPI_t *)_spi_port_memorymap).SR = SPI_SR_EOQF;  // make sure it is clear
+	while ((_pkinetisk_spi->SR & SPI_SR_EOQF) == 0) ;
+	_pkinetisk_spi->SR = SPI_SR_EOQF;  // make sure it is clear
 	endSPITransaction();
 
 }
@@ -983,20 +986,20 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 
 	while (txCount || rxCount) {
 		// transmit another byte if possible
-		if (txCount && (IMXRT_LPSPI4_S.SR & LPSPI_SR_TDF)) {
+		if (txCount && (_pimxrt_spi->SR & LPSPI_SR_TDF)) {
 			txCount--;
 			if (txCount) {
-				IMXRT_LPSPI4_S.TDR = 0;
+				_pimxrt_spi->TDR = 0;
 			} else {
 				maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7)); // remove the CONTINUE...
-				while ((IMXRT_LPSPI4_S.SR & LPSPI_SR_TDF) == 0) ;		// wait if queue was full
-				IMXRT_LPSPI4_S.TDR = 0;
+				while ((_pimxrt_spi->SR & LPSPI_SR_TDF) == 0) ;		// wait if queue was full
+				_pimxrt_spi->TDR = 0;
 			}
 		}
 
 		// receive another byte if possible, and either skip it or store the color
-		if (rxCount && !(IMXRT_LPSPI4_S.RSR & LPSPI_RSR_RXEMPTY)) {
-			rgb[rgbIdx] = IMXRT_LPSPI4_S.RDR;
+		if (rxCount && !(_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY)) {
+			rgb[rgbIdx] = _pimxrt_spi->RDR;
 
 			rxCount--;
 			rgbIdx++;
@@ -1478,7 +1481,7 @@ void ILI9488_t3::begin(void)
 	_cspinmask = digitalPinToBitMask(_cs);
 	pinMode(_cs, OUTPUT);	
 	DIRECT_WRITE_HIGH(_csport, _cspinmask);
-	_spi_tcr_current = IMXRT_LPSPI4_S.TCR; // get the current TCR value 
+	_spi_tcr_current = _pimxrt_spi->TCR; // get the current TCR value 
 
 	// TODO:  Need to setup DC to actually work.
 	if (spi_port->pinIsChipSelect(_dc)) {
@@ -1506,6 +1509,13 @@ void ILI9488_t3::begin(void)
 		digitalWrite(_rst, HIGH);
 		delay(150);
 	}
+
+	// REAL HACK TO GET SPI information!!!!
+  	uint32_t *pa = (uint32_t*)((void*)spi_port);
+	_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+    #ifdef KINETISK
+	_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+	#endif
 	/*
 	uint8_t x = readcommand8(ILI9488_RDMODE);
 	Serial.print("\nDisplay Power Mode: 0x"); Serial.println(x, HEX);
@@ -2974,26 +2984,26 @@ void ILI9488_t3::process_dma_interrupt(void) {
 			// We are in single refresh mode or the user has called cancel so
 			// Lets try to release the CS pin
 			// Lets wait until FIFO is not empty
-			// Serial.printf("Before FSR wait: %x %x\n", IMXRT_LPSPI4_S.FSR, IMXRT_LPSPI4_S.SR);
+			// Serial.printf("Before FSR wait: %x %x\n", _pimxrt_spi->FSR, _pimxrt_spi->SR);
 			//Serial.println("End DMA transfer");
 #if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
-			while (IMXRT_LPSPI4_S.FSR & 0x1f)  ;	// wait until this one is complete
+			while (_pimxrt_spi->FSR & 0x1f)  ;	// wait until this one is complete
 
-			 //Serial.printf("Before SR busy wait: %x\n", IMXRT_LPSPI4_S.SR);
-			while (IMXRT_LPSPI4_S.SR & LPSPI_SR_MBF)  ;	// wait until this one is complete
+			 //Serial.printf("Before SR busy wait: %x\n", _pimxrt_spi->SR);
+			while (_pimxrt_spi->SR & LPSPI_SR_MBF)  ;	// wait until this one is complete
 
 			_dmatx.clearComplete();
 			//Serial.println("Restore FCR");
-			IMXRT_LPSPI4_S.FCR = LPSPI_FCR_TXWATER(15); // _spi_fcr_save;	// restore the FSR status... 
-	 		IMXRT_LPSPI4_S.DER = 0;		// DMA no longer doing TX (or RX)
+			_pimxrt_spi->FCR = LPSPI_FCR_TXWATER(15); // _spi_fcr_save;	// restore the FSR status... 
+	 		_pimxrt_spi->DER = 0;		// DMA no longer doing TX (or RX)
 
-			IMXRT_LPSPI4_S.CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
-			IMXRT_LPSPI4_S.SR = 0x3f00;	// clear out all of the other status...
+			_pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
+			_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
 
 
 			maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));	// output Command with 8 bits
-			// Serial.printf("Output NOP (SR %x CR %x FSR %x FCR %x %x TCR:%x)\n", IMXRT_LPSPI4_S.SR, IMXRT_LPSPI4_S.CR, IMXRT_LPSPI4_S.FSR, 
-			//	IMXRT_LPSPI4_S.FCR, _spi_fcr_save, IMXRT_LPSPI4_S.TCR);
+			// Serial.printf("Output NOP (SR %x CR %x FSR %x FCR %x %x TCR:%x)\n", _pimxrt_spi->SR, _pimxrt_spi->CR, _pimxrt_spi->FSR, 
+			//	_pimxrt_spi->FCR, _spi_fcr_save, _pimxrt_spi->TCR);
 #elif defined(__MK66FX1M0__) 
 			// T3.6
 			// Maybe only have to wait for fifo not to be full so we can output NOP>>> 
@@ -3049,13 +3059,13 @@ void	ILI9488_t3::initDMASettings(void)
 	// Serial.println("DMA initDMASettings - before settings");
 	// Serial.printf("  CWW: %d %d %d\n", CBALLOC, SCREEN_DMA_NUM_SETTINGS, COUNT_WORDS_WRITE);
 	_dmasettings[0].sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
-	_dmasettings[0].destination(IMXRT_LPSPI4_S.TDR);
+	_dmasettings[0].destination(_pimxrt_spi->TDR);
 	_dmasettings[0].TCD->ATTR_DST = 0;
 	_dmasettings[0].replaceSettingsOnCompletion(_dmasettings[1]);
 	_dmasettings[0].interruptAtCompletion();
 
 	_dmasettings[1].sourceBuffer(_dma_pixel_buffer1, sizeof(_dma_pixel_buffer1));
-	_dmasettings[1].destination(IMXRT_LPSPI4_S.TDR);
+	_dmasettings[1].destination(_pimxrt_spi->TDR);
 	_dmasettings[1].TCD->ATTR_DST = 0;
 	_dmasettings[1].replaceSettingsOnCompletion(_dmasettings[0]);
 	_dmasettings[1].interruptAtCompletion();
@@ -3064,24 +3074,24 @@ void	ILI9488_t3::initDMASettings(void)
 	//Serial.println("Setup _dmatx");
 	// Serial.println("DMA initDMASettings - before dmatx");
 	_dmatx.begin(true);
-	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX);
+	_dmatx.triggerAtHardwareEvent(_spi_hardware->tx_dma_channel);
 	_dmatx = _dmasettings[0];
 	_dmatx.attachInterrupt(dmaInterrupt);
 #elif defined(__MK66FX1M0__) 
 	_dmasettings[0].sourceBuffer(&_dma_pixel_buffer0[3], sizeof(_dma_pixel_buffer0)-3);
-	_dmasettings[0].destination(KINETISK_SPI0.PUSHR);
+	_dmasettings[0].destination(_pkinetisk_spi->PUSHR);
 	_dmasettings[0].TCD->ATTR_DST = 0;
 	_dmasettings[0].replaceSettingsOnCompletion(_dmasettings[1]);
 	_dmasettings[0].interruptAtCompletion();
 
 	_dmasettings[1].sourceBuffer(_dma_pixel_buffer1, sizeof(_dma_pixel_buffer1));
-	_dmasettings[1].destination(KINETISK_SPI0.PUSHR);
+	_dmasettings[1].destination(_pkinetisk_spi->PUSHR);
 	_dmasettings[1].TCD->ATTR_DST = 0;
 	_dmasettings[1].replaceSettingsOnCompletion(_dmasettings[2]);
 	_dmasettings[1].interruptAtCompletion();
 
 	_dmasettings[2].sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
-	_dmasettings[2].destination(KINETISK_SPI0.PUSHR);
+	_dmasettings[2].destination(_pkinetisk_spi->PUSHR);
 	_dmasettings[2].TCD->ATTR_DST = 0;
 	_dmasettings[2].replaceSettingsOnCompletion(_dmasettings[1]);
 	_dmasettings[2].interruptAtCompletion();
@@ -3089,7 +3099,7 @@ void	ILI9488_t3::initDMASettings(void)
 	//Serial.println("Setup _dmatx");
 	// Serial.println("DMA initDMASettings - before dmatx");
 	_dmatx.begin(true);
-	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_SPI0_TX);
+	_dmatx.triggerAtHardwareEvent(_spi_hardware->tx_dma_channel);
 	_dmatx = _dmasettings[0];
 	_dmatx.attachInterrupt(dmaInterrupt);
 #else
@@ -3206,15 +3216,15 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	writecommand_last(ILI9488_RAMWR);
 
 	// Update TCR to 16 bit mode. and output the first entry.
-	_spi_fcr_save = IMXRT_LPSPI4_S.FCR;	// remember the FCR
-	IMXRT_LPSPI4_S.FCR = 0;	// clear water marks... 	
+	_spi_fcr_save = _pimxrt_spi->FCR;	// remember the FCR
+	_pimxrt_spi->FCR = 0;	// clear water marks... 	
 	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_RXMSK /*| LPSPI_TCR_CONT*/);
-//	IMXRT_LPSPI4_S.CFGR1 |= LPSPI_CFGR1_NOSTALL;
+//	_pimxrt_spi->CFGR1 |= LPSPI_CFGR1_NOSTALL;
 //	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
- 	IMXRT_LPSPI4_S.DER = LPSPI_DER_TDDE;
-	IMXRT_LPSPI4_S.SR = 0x3f00;	// clear out all of the other status...
+ 	_pimxrt_spi->DER = LPSPI_DER_TDDE;
+	_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
 
-  	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX );
+  	//_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX );
 
  	_dmatx = _dmasettings[0];
 
@@ -3232,8 +3242,8 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	_dma_frame_count = 0;  // Set frame count back to zero. 
 	_dmaActiveDisplay = this;
 	_dma_state |= ILI9488_DMA_ACTIVE;
-	KINETISK_SPI0.RSER |= SPI_RSER_TFFF_DIRS |	 SPI_RSER_TFFF_RE;	 // Set DMA Interrupt Request Select and Enable register
-	KINETISK_SPI0.MCR &= ~SPI_MCR_HALT;  //Start transfers.
+	_pkinetisk_spi->RSER |= SPI_RSER_TFFF_DIRS |	 SPI_RSER_TFFF_RE;	 // Set DMA Interrupt Request Select and Enable register
+	_pkinetisk_spi->MCR &= ~SPI_MCR_HALT;  //Start transfers.
 	_dmatx.enable();
 
 #else
@@ -3304,23 +3314,23 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 	void ILI9488_t3::waitFifoNotFull(void) {
     	uint32_t tmp __attribute__((unused));
     	do {
-        	if ((IMXRT_LPSPI4_S.RSR & LPSPI_RSR_RXEMPTY) == 0)  {
-            	tmp = IMXRT_LPSPI4_S.RDR;  // Read any pending RX bytes in
+        	if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0)  {
+            	tmp = _pimxrt_spi->RDR;  // Read any pending RX bytes in
             	if (_pending_rx_count) _pending_rx_count--; //decrement count of bytes still levt
         	}
-    	} while ((IMXRT_LPSPI4_S.SR & LPSPI_SR_TDF) == 0) ;
+    	} while ((_pimxrt_spi->SR & LPSPI_SR_TDF) == 0) ;
 	}
 	void ILI9488_t3::waitTransmitComplete(void)  {
 	    uint32_t tmp __attribute__((unused));
 	//    digitalWriteFast(2, HIGH);
 
 	    while (_pending_rx_count) {
-	        if ((IMXRT_LPSPI4_S.RSR & LPSPI_RSR_RXEMPTY) == 0)  {
-	            tmp = IMXRT_LPSPI4_S.RDR;  // Read any pending RX bytes in
+	        if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0)  {
+	            tmp = _pimxrt_spi->RDR;  // Read any pending RX bytes in
 	            _pending_rx_count--; //decrement count of bytes still levt
 	        }
 	    }
-	    IMXRT_LPSPI4_S.CR = LPSPI_CR_MEN | LPSPI_CR_RRF;       // Clear RX FIFO
+	    _pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF;       // Clear RX FIFO
 	//    digitalWriteFast(2, LOW);
 	}
 
@@ -3332,14 +3342,14 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 			_spi_tcr_current = (_spi_tcr_current & ~TCR_MASK) | requested_tcr_state ;
 			// only output when Transfer queue is empty.
 			if (!dc_state_change || !_dcpinmask) {
-				while ((IMXRT_LPSPI4_S.FSR & 0x1f) )	;
-				IMXRT_LPSPI4_S.TCR = _spi_tcr_current;	// update the TCR
+				while ((_pimxrt_spi->FSR & 0x1f) )	;
+				_pimxrt_spi->TCR = _spi_tcr_current;	// update the TCR
 
 			} else {
 				waitTransmitComplete();
 				if (requested_tcr_state & LPSPI_TCR_PCS(3)) DIRECT_WRITE_HIGH(_dcport, _dcpinmask);
 				else DIRECT_WRITE_LOW(_dcport, _dcpinmask);
-				IMXRT_LPSPI4_S.TCR = _spi_tcr_current & ~(LPSPI_TCR_PCS(3) | LPSPI_TCR_CONT);	// go ahead and update TCR anyway?  
+				_pimxrt_spi->TCR = _spi_tcr_current & ~(LPSPI_TCR_PCS(3) | LPSPI_TCR_CONT);	// go ahead and update TCR anyway?  
 
 			}
 		}
@@ -3359,40 +3369,40 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 	// BUGBUG:: currently assumming we only have CS_0 as valid CS
 	void ILI9488_t3::writecommand_cont(uint8_t c) {
 		maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7) /*| LPSPI_TCR_CONT*/);
-		IMXRT_LPSPI4_S.TDR = c;
+		_pimxrt_spi->TDR = c;
 		_pending_rx_count++;	//
 		waitFifoNotFull();
 	}
 	void ILI9488_t3::writedata8_cont(uint8_t c) {
 		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
-		IMXRT_LPSPI4_S.TDR = c;
+		_pimxrt_spi->TDR = c;
 		_pending_rx_count++;	//
 		waitFifoNotFull();
 	}
 	void ILI9488_t3::writedata16_cont(uint16_t d) {
 		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
-		IMXRT_LPSPI4_S.TDR = d;
+		_pimxrt_spi->TDR = d;
 		_pending_rx_count++;	//
 		waitFifoNotFull();
 	}
 	void ILI9488_t3::writecommand_last(uint8_t c) {
 		maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));
-		IMXRT_LPSPI4_S.TDR = c;
-//		IMXRT_LPSPI4_S.SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
+		_pimxrt_spi->TDR = c;
+//		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
 		_pending_rx_count++;	//
 		waitTransmitComplete();
 	}
 	void ILI9488_t3::writedata8_last(uint8_t c) {
 		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7));
-		IMXRT_LPSPI4_S.TDR = c;
-//		IMXRT_LPSPI4_S.SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
+		_pimxrt_spi->TDR = c;
+//		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
 		_pending_rx_count++;	//
 		waitTransmitComplete();
 	}
 	void ILI9488_t3::writedata16_last(uint16_t d) {
 		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15));
-		IMXRT_LPSPI4_S.TDR = d;
-//		IMXRT_LPSPI4_S.SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
+		_pimxrt_spi->TDR = d;
+//		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
 		_pending_rx_count++;	//
 		waitTransmitComplete();
 	}
@@ -3404,34 +3414,34 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 		uint32_t sr;
 		uint32_t tmp __attribute__((unused));
 		do {
-			sr = (*(KINETISK_SPI_t *)_spi_port_memorymap).SR;
-			if (sr & 0xF0) tmp = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;  // drain RX FIFO
-		} while ((sr & (15 << 12)) > (3 << 12));
+			sr = _pkinetisk_spi->SR;
+			if (sr & 0xF0) tmp = _pkinetisk_spi->POPR;  // drain RX FIFO
+		} while ((sr & (15 << 12)) > ((_fifo_size-1) << 12));
 	}
 	void ILI9488_t3::waitFifoEmpty(void) {
 		uint32_t sr;
 		uint32_t tmp __attribute__((unused));
 		do {
-			sr = (*(KINETISK_SPI_t *)_spi_port_memorymap).SR;
-			if (sr & 0xF0) tmp = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;  // drain RX FIFO
+			sr = _pkinetisk_spi->SR;
+			if (sr & 0xF0) tmp = _pkinetisk_spi->POPR;  // drain RX FIFO
 		} while ((sr & 0xF0F0) > 0);             // wait both RX & TX empty
 	}
 	void ILI9488_t3::waitTransmitComplete(void) {
 		uint32_t tmp __attribute__((unused));
-		while (!((*(KINETISK_SPI_t *)_spi_port_memorymap).SR & SPI_SR_TCF)) ; // wait until final output done
-		tmp = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;                  // drain the final RX FIFO word
+		while (!(_pkinetisk_spi->SR & SPI_SR_TCF)) ; // wait until final output done
+		tmp = _pkinetisk_spi->POPR;                  // drain the final RX FIFO word
 	}
 	void ILI9488_t3::waitTransmitComplete(uint32_t mcr) {
 		uint32_t tmp __attribute__((unused));
 		while (1) {
-			uint32_t sr = (*(KINETISK_SPI_t *)_spi_port_memorymap).SR;
+			uint32_t sr = _pkinetisk_spi->SR;
 			if (sr & SPI_SR_EOQF) break;  // wait for last transmit
-			if (sr &  0xF0) tmp = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;
+			if (sr &  0xF0) tmp = _pkinetisk_spi->POPR;
 		}
-		(*(KINETISK_SPI_t *)_spi_port_memorymap).SR = SPI_SR_EOQF;
-		SPI0_MCR = mcr;
-		while ((*(KINETISK_SPI_t *)_spi_port_memorymap).SR & 0xF0) {
-			tmp = (*(KINETISK_SPI_t *)_spi_port_memorymap).POPR;
+		_pkinetisk_spi->SR = SPI_SR_EOQF;
+		_pkinetisk_spi->MCR = mcr;
+		while (_pkinetisk_spi->SR & 0xF0) {
+			tmp = _pkinetisk_spi->POPR;
 		}
 	}
 	void ILI9488_t3::ILI9488_t3::beginSPITransaction(uint32_t clock) {
@@ -3446,30 +3456,30 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 	}
 
 	void ILI9488_t3::writecommand_cont(uint8_t c) {
-		(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = c | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
+		_pkinetisk_spi->PUSHR = c | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
 		waitFifoNotFull();
 	}
 	void ILI9488_t3::writedata8_cont(uint8_t c) {
-		(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = c | (pcs_data << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
+		_pkinetisk_spi->PUSHR = c | (pcs_data << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
 		waitFifoNotFull();
 	}
 	void ILI9488_t3::writedata16_cont(uint16_t d) {
-		(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = d | (pcs_data << 16) | SPI_PUSHR_CTAS(1) | SPI_PUSHR_CONT;
+		_pkinetisk_spi->PUSHR = d | (pcs_data << 16) | SPI_PUSHR_CTAS(1) | SPI_PUSHR_CONT;
 		waitFifoNotFull();
 	}
 	void ILI9488_t3::writecommand_last(uint8_t c) {
-		uint32_t mcr = SPI0_MCR;
-		(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = c | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_EOQ;
+		uint32_t mcr = _pkinetisk_spi->MCR;
+		_pkinetisk_spi->PUSHR = c | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_EOQ;
 		waitTransmitComplete(mcr);
 	}
 	void ILI9488_t3::writedata8_last(uint8_t c) {
-		uint32_t mcr = SPI0_MCR;
-		(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = c | (pcs_data << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_EOQ;
+		uint32_t mcr = _pkinetisk_spi->MCR;
+		_pkinetisk_spi->PUSHR = c | (pcs_data << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_EOQ;
 		waitTransmitComplete(mcr);
 	}
 	void ILI9488_t3::writedata16_last(uint16_t d) {
-		uint32_t mcr = SPI0_MCR;
-		(*(KINETISK_SPI_t *)_spi_port_memorymap).PUSHR = d | (pcs_data << 16) | SPI_PUSHR_CTAS(1) | SPI_PUSHR_EOQ;
+		uint32_t mcr = _pkinetisk_spi->MCR;
+		_pkinetisk_spi->PUSHR = d | (pcs_data << 16) | SPI_PUSHR_CTAS(1) | SPI_PUSHR_EOQ;
 		waitTransmitComplete(mcr);
 	}
 #endif
