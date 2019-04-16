@@ -58,11 +58,37 @@
 #define HEIGHT ILI9488_TFTHEIGHT
 
 #ifdef ENABLE_ILI9488_FRAMEBUFFER
-#define CBALLOC (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH*2)
+#define CBALLOC (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)
 #define	COUNT_WORDS_WRITE  ((ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)/SCREEN_DMA_NUM_SETTINGS) // Note I know the divide will give whole number
 #endif
 
-// Constructor when using hardware spi_port->  Faster, but must use SPI pins
+#if defined(__MK66FX1M0__) 
+DMASetting 	ILI9488_t3::_dmasettings[3];
+DMAChannel 	ILI9488_t3::_dmatx;
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+//#define DEBUG_ASYNC_UPDATE
+//#define DEBUG_ASYNC_LEDS	// Enable to use digitalWrites to Debug
+#ifdef DEBUG_ASYNC_LEDS
+#define DEBUG_PIN_1 2
+#define DEBUG_PIN_2 3
+#define DEBUG_PIN_3 4
+#endif
+
+
+DMASetting 	ILI9488_t3::_dmasettings[2];
+DMAChannel 	ILI9488_t3::_dmatx;
+#else
+#endif	
+
+ILI9488_t3 *ILI9488_t3::_dmaActiveDisplay = 0;
+volatile uint8_t  	ILI9488_t3::_dma_state = 0;  // Use pointer to this as a way to get back to object...
+volatile uint32_t	ILI9488_t3::_dma_frame_count = 0;	// Can return a frame count...
+volatile uint32_t 	ILI9488_t3::_dma_pixel_index = 0;
+volatile uint16_t	ILI9488_t3::_dma_sub_frame_count = 0;	// Can return a frame count...
+
+
+
+// Constructor when using hardware SPI.  Faster, but must use SPI pins
 // specific to each board type (e.g. 11,13 for Uno, 51,52 for Mega, etc.)
 ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, uint8_t mosi, uint8_t sclk, uint8_t miso)
 {
@@ -96,19 +122,57 @@ ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, u
     _cspinmask = 0;
     _csport = NULL;
 	
+	_use_fbtft = false;
+	_pfbtft = nullptr;
+	_pallet = NULL ;	// 
+	// Probably should check that it did not fail... 
+	_pallet_size = 0;					// How big is the pallet
+	_pallet_count = 0;					// how many items are in it...
 	setClipRect();
 	setOrigin();
 }
 
 //=======================================================================
-// Add optinal support for using frame buffer to speed up complex outputs
+// Add optional support for using frame buffer to speed up complex outputs
 //=======================================================================
-void ILI9488_t3::setFrameBuffer(uint16_t *frame_buffer) 
+	
+	// Support for user to set Pallet. 
+void ILI9488_t3::setPallet(uint16_t *pal, uint16_t count) {
+	if (_pallet && _pallet_size) free(_pallet);
+
+	_pallet = pal;
+	_pallet_count = count;
+	_pallet_size = 0;	// assume we can not set this internally 
+}
+
+uint8_t ILI9488_t3::doActualConvertColorToIndex(uint16_t color) {
+	if (_pallet == nullptr) {
+		// Need to allocate it... 
+		_pallet = (uint16_t *)malloc(256*sizeof(uint16_t));	// 
+		// Probably should check that it did not fail... 
+    	_pallet_size = 256;					// How big is the pallet
+    	_pallet_count = 0;					// how many items are in it...
+	}
+	
+	if (_colors_are_index) return (uint8_t)color;
+
+	for (uint8_t i = 0; i < _pallet_count; i++) {
+		if (_pallet[i] == color) return i;
+	}
+	if (_pallet_count >=  _pallet_size) return 0;
+	_pallet[_pallet_count] = color;
+	return _pallet_count++;
+}
+	
+
+
+void ILI9488_t3::setFrameBuffer(uint8_t *frame_buffer) 
 {
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	_pfbtft = frame_buffer;
 	if (_pfbtft != NULL) {
-		memset(_pfbtft, 0, ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH*2);
+		// Frame buffer is color index only here...
+		memset(_pfbtft, 0, ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH);
 	}
 
 	#endif	
@@ -122,10 +186,10 @@ uint8_t ILI9488_t3::useFrameBuffer(boolean b)		// use the frame buffer?  First c
 		// First see if we need to allocate buffer
 		if (_pfbtft == NULL) {
 			// Hack to start frame buffer on 32 byte boundary
-			_we_allocated_buffer = (uint16_t *)malloc(CBALLOC+32);
+			_we_allocated_buffer = (uint8_t *)malloc(CBALLOC+32);
 			if (_we_allocated_buffer == NULL)
 				return 0;	// failed 
-			_pfbtft = (uint16_t*) (((uintptr_t)_we_allocated_buffer + 32) & ~ ((uintptr_t) (31)));
+			_pfbtft = (uint8_t*) (((uintptr_t)_we_allocated_buffer + 32) & ~ ((uintptr_t) (31)));
 			memset(_pfbtft, 0, CBALLOC);	
 		}
 		_use_fbtft = 1;
@@ -157,20 +221,21 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 	if (_use_fbtft) {
 		beginSPITransaction();
 		if (_standard) {
+			//Serial.printf("Update Screen Standard %x(%x)\n", *_pfbtft, _pallet[*_pfbtft]);
 			// Doing full window. 
 			setAddr(0, 0, _width-1, _height-1);
 			writecommand_cont(ILI9488_RAMWR);
 
 			// BUGBUG doing as one shot.  Not sure if should or not or do like
 			// main code and break up into transactions...
-			uint16_t *pfbtft_end = &_pfbtft[(ILI9488_TFTWIDTH*ILI9488_TFTHEIGHT)-1];	// setup 
-			uint16_t *pftbft = _pfbtft;
+			uint8_t *pfbtft_end = &_pfbtft[(ILI9488_TFTWIDTH*ILI9488_TFTHEIGHT)-1];	// setup 
+			uint8_t *pftbft = _pfbtft;
 
 			// Quick write out the data;
 			while (pftbft < pfbtft_end) {
-				write16BitColor(*pftbft++, true);
+				write16BitColor(_pallet[*pftbft++]);
 			}
-			write16BitColor(*pftbft);
+			write16BitColor(_pallet[*pftbft], true);
 		} else {
 			// setup just to output the clip rectangle area. 
 			setAddr(_displayclipx1, _displayclipy1, _displayclipx2-1, _displayclipy2-1);
@@ -178,16 +243,16 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 
 			// BUGBUG doing as one shot.  Not sure if should or not or do like
 			// main code and break up into transactions...
-			uint16_t * pfbPixel_row = &_pfbtft[ _displayclipy1*_width + _displayclipx1];
+			uint8_t * pfbPixel_row = &_pfbtft[ _displayclipy1*_width + _displayclipx1];
 			for (uint16_t y = _displayclipy1; y < _displayclipy2; y++) {
-				uint16_t * pfbPixel = pfbPixel_row;
+				uint8_t * pfbPixel = pfbPixel_row;
 				for (uint16_t x = _displayclipx1; x < (_displayclipx2-1); x++) {
-					write16BitColor(*pfbPixel++);
+					write16BitColor(_pallet[*pfbPixel++]);
 				}
 				if (y < (_displayclipy2-1))
-					write16BitColor(*pfbPixel);
+					write16BitColor(_pallet[*pfbPixel]);
 				else	
-					write16BitColor(*pfbPixel, true);
+					write16BitColor(_pallet[*pfbPixel], true);
 				pfbPixel_row += _width;	// setup for the next row. 
 			}
 		}
@@ -266,7 +331,7 @@ void ILI9488_t3::drawPixel(int16_t x, int16_t y, uint16_t color) {
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		_pfbtft[y*_width + x] = color;
+		_pfbtft[y*_width + x] = mapColorToPalletIndex(color);
 
 	} else 
 	#endif
@@ -291,9 +356,10 @@ void ILI9488_t3::drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint16_t * pfbPixel = &_pfbtft[ y*_width + x];
+		uint8_t * pfbPixel = &_pfbtft[ y*_width + x];
+		uint8_t color_index = mapColorToPalletIndex(color);
 		while (h--) {
-			*pfbPixel = color;
+			*pfbPixel = color_index;
 			pfbPixel += _width;
 		}
 	} else 
@@ -323,19 +389,10 @@ void ILI9488_t3::drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		if ((x&1) || (w&1)) {
-			uint16_t * pfbPixel = &_pfbtft[ y*_width + x];
-			while (w--) {
-				*pfbPixel++ = color;
-			}
-		} else {
-			// X is even and so is w, try 32 bit writes..
-			uint32_t color32 = (color << 16) | color;
-			uint32_t * pfbPixel = (uint32_t*)((uint16_t*)&_pfbtft[ y*_width + x]);
-			while (w) {
-				*pfbPixel++ = color32;
-				w -= 2;
-			}
+		uint8_t color_index = mapColorToPalletIndex(color);
+		uint8_t * pfbPixel = &_pfbtft[ y*_width + x];
+		while (w--) {
+			*pfbPixel++ = color_index;
 		}
 	} else 
 	#endif
@@ -372,26 +429,28 @@ void ILI9488_t3::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		if ((x&1) || (w&1)) {
-			uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		uint8_t color_index = mapColorToPalletIndex(color);
+		//if (x==0 && y == 0) Serial.printf("fillrect %x %x %x\n", color, color_index, _pallet[color_index]);
+		if (1 || (x&3) || (w&3)) {
+			uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
 			for (;h>0; h--) {
-				uint16_t * pfbPixel = pfbPixel_row;
+				uint8_t * pfbPixel = pfbPixel_row;
 				for (int i = 0 ;i < w; i++) {
-					*pfbPixel++ = color;
+					*pfbPixel++ = color_index;
 				}
 				pfbPixel_row += _width;
 			}
 		} else {
 			// Horizontal is even number so try 32 bit writes instead
-			uint32_t color32 = (color << 16) | color;
-			uint32_t * pfbPixel_row = (uint32_t *)((uint16_t*)&_pfbtft[ y*_width + x]);
-			w = w/2;	// only iterate half the times
+			uint32_t color32 = ((uint32_t)color_index << 24) | ((uint32_t)color_index << 16) | ((uint32_t)color_index << 8) | color_index;
+			uint32_t * pfbPixel_row = (uint32_t *)((uint8_t*)&_pfbtft[ y*_width + x]);
+			w = w/4;	// only iterate quarter the times
 			for (;h>0; h--) {
 				uint32_t * pfbPixel = pfbPixel_row;
 				for (int i = 0 ;i < w; i++) {
 					*pfbPixel++ = color32;
 				}
-				pfbPixel_row += (_width/2);
+				pfbPixel_row += (_width/4);
 			}
 		}
 	} else 
@@ -441,31 +500,15 @@ void ILI9488_t3::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t h, u
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		if ((x&1) || (w&1)) {
-			uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
-			for (;h>0; h--) {
-				uint16_t color = RGB14tocolor565(r,g,b);
-				uint16_t * pfbPixel = pfbPixel_row;
-				for (int i = 0 ;i < w; i++) {
-					*pfbPixel++ = color;
-				}
-				r+=dr;g+=dg; b+=db;
-				pfbPixel_row += _width;
+		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		for (;h>0; h--) {
+			uint16_t color = RGB14tocolor565(r,g,b);
+			uint8_t * pfbPixel = pfbPixel_row;
+			for (int i = 0 ;i < w; i++) {
+				*pfbPixel++ = mapColorToPalletIndex(color);
 			}
-		} else {
-			// Horizontal is even number so try 32 bit writes instead
-			uint32_t * pfbPixel_row = (uint32_t *)((uint16_t*)&_pfbtft[ y*_width + x]);
-			w = w/2;	// only iterate half the times
-			for (;h>0; h--) {
-				uint32_t * pfbPixel = pfbPixel_row;
-				uint16_t color = RGB14tocolor565(r,g,b);
-				uint32_t color32 = (color << 16) | color;
-				for (int i = 0 ;i < w; i++) {
-					*pfbPixel++ = color32;
-				}
-				pfbPixel_row += (_width/2);
-				r+=dr;g+=dg; b+=db;
-			}
+			r+=dr;g+=dg; b+=db;
+			pfbPixel_row += _width;
 		}
 	} else 
 	#endif
@@ -511,11 +554,11 @@ void ILI9488_t3::fillRectHGradient(int16_t x, int16_t y, int16_t w, int16_t h, u
 	r=r1;g=g1;b=b1;	
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
-			uint16_t * pfbPixel = pfbPixel_row;
+			uint8_t * pfbPixel = pfbPixel_row;
 			for (int i = 0 ;i < w; i++) {
-				*pfbPixel++ = RGB14tocolor565(r,g,b);
+				*pfbPixel++ = mapColorToPalletIndex(RGB14tocolor565(r,g,b));
 				r+=dr;g+=dg; b+=db;
 			}
 			pfbPixel_row += _width;
@@ -766,7 +809,8 @@ uint16_t ILI9488_t3::readPixel(int16_t x, int16_t y)
 		x+=_originx;
 		y+=_originy;
 
-		return _pfbtft[y*_width + x] ;
+		uint8_t color_index =  _pfbtft[y*_width + x];
+		return _colors_are_index ? color_index : _pallet[color_index];
 	}
 	#endif	
 
@@ -831,11 +875,12 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
-			uint16_t * pfbPixel = pfbPixel_row;
+			uint8_t * pfbPixel = pfbPixel_row;
 			for (int i = 0 ;i < w; i++) {
-				*pcolors++ = *pfbPixel++;
+				uint8_t color_index = *pfbPixel++;
+				*pcolors++ = _colors_are_index? color_index : _pallet[color_index];
 			}
 			pfbPixel_row += _width;
 		}
@@ -907,11 +952,12 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
-			uint16_t * pfbPixel = pfbPixel_row;
+			uint8_t * pfbPixel = pfbPixel_row;
 			for (int i = 0 ;i < w; i++) {
-				*pcolors++ = *pfbPixel++;
+				uint8_t color_index = *pfbPixel++;
+				*pcolors++ = _colors_are_index? color_index : _pallet[color_index];
 			}
 			pfbPixel_row += _width;
 		}
@@ -1077,12 +1123,12 @@ void ILI9488_t3::writeRect(int16_t x, int16_t y, int16_t w, int16_t h, const uin
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
-			uint16_t * pfbPixel = pfbPixel_row;
+			uint8_t * pfbPixel = pfbPixel_row;
 			pcolors += x_clip_left;
 			for (int i = 0 ;i < w; i++) {
-				*pfbPixel++ = *pcolors++;
+				*pfbPixel++ = mapColorToPalletIndex(*pcolors++);
 			}
 			pfbPixel_row += _width;
 			pcolors += x_clip_right;
@@ -1149,12 +1195,12 @@ void ILI9488_t3::writeRect8BPP(int16_t x, int16_t y, int16_t w, int16_t h, const
 	//Serial.printf("WR8C: %d %d %d %d %x- %d %d\n", x, y, w, h, (uint32_t)pixels, x_clip_right, x_clip_left);
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
 			pixels += x_clip_left;
-			uint16_t * pfbPixel = pfbPixel_row;
+			uint8_t * pfbPixel = pfbPixel_row;
 			for (int i = 0 ;i < w; i++) {
-				*pfbPixel++ = palette[*pixels++];
+				*pfbPixel++ = mapColorToPalletIndex(palette[*pixels++]);
 			}
 			pixels += x_clip_right;
 			pfbPixel_row += _width;
@@ -1310,14 +1356,14 @@ void ILI9488_t3::writeRectNBPP(int16_t x, int16_t y, int16_t w, int16_t h,  uint
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint16_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
-			uint16_t * pfbPixel = pfbPixel_row;
+			uint8_t * pfbPixel = pfbPixel_row;
 			pixels = pixels_row_start;				// setup for this row
 			uint8_t pixel_shift = row_shift_init;			// Setup mask
 
 			for (int i = 0 ; i < w; i++) {
-				*pfbPixel++ = palette[((*pixels)>>pixel_shift) & pixel_bit_mask];
+				*pfbPixel++ = mapColorToPalletIndex(palette[((*pixels)>>pixel_shift) & pixel_bit_mask]);
 				if (!pixel_shift) {
 					pixel_shift = 8 - bits_per_pixel;	//setup next mask
 					pixels++;
@@ -2237,8 +2283,10 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 */
 		#ifdef ENABLE_ILI9488_FRAMEBUFFER
 		if (_use_fbtft) {
-			uint16_t * pfbPixel_row = &_pfbtft[ start_y*_width + start_x];
-			uint16_t * pfbPixel;
+			uint8_t * pfbPixel_row = &_pfbtft[ start_y*_width + start_x];
+			uint8_t * pfbPixel;
+			uint8_t textbgcolor_index = mapColorToPalletIndex(textbgcolor);
+			uint8_t textcolor_index = mapColorToPalletIndex(textcolor);
 			int screen_y = start_y;
 			int screen_x;
 
@@ -2248,7 +2296,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 				if ((screen_y >= _displayclipy1) && (screen_y < _displayclipy2)) {
 					for (screen_x = start_x; screen_x <= end_x; screen_x++) {
 						if (screen_x >= _displayclipx1) {
-							*pfbPixel = textbgcolor;
+							*pfbPixel = textbgcolor_index;
 						}
 						pfbPixel++;
 					}
@@ -2280,7 +2328,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 
 						for (screen_x = start_x; screen_x < origin_x; screen_x++) {
 							if (screen_x >= _displayclipx1) {
-								*pfbPixel = textbgcolor;
+								*pfbPixel = textbgcolor_index;
 							} // make sure not clipped
 							pfbPixel++;
 						}
@@ -2297,7 +2345,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 						if ((screen_y >= _displayclipy1) && (screen_y < _displayclipy2)) {
 							while (bit_mask && (screen_x <= end_x)) {
 								if ((screen_x >= _displayclipx1) && (screen_x < _displayclipx2)) {
-									*pfbPixel = (bits & bit_mask) ? textcolor : textbgcolor;
+									*pfbPixel = (bits & bit_mask) ? textcolor_index : textbgcolor_index;
 								}
 								pfbPixel++;	
 								bit_mask = bit_mask >> 1;
@@ -2310,7 +2358,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 					if ((screen_y >= _displayclipy1) && (screen_y < _displayclipy2)) {
 						// output bg color and right hand side
 						while (screen_x++ <= end_x) {
-							*pfbPixel++ = textbgcolor;
+							*pfbPixel++ = textbgcolor_index;
 						}
 					}			 
 		 			screen_y++;
@@ -2325,7 +2373,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 					pfbPixel = pfbPixel_row;
 					for (screen_x = start_x; screen_x <= end_x; screen_x++) {
 						if (screen_x >= _displayclipx1) {
-							*pfbPixel = textbgcolor;
+							*pfbPixel = textbgcolor_index;
 						}
 						pfbPixel++;
 					}
@@ -2885,6 +2933,362 @@ bool Adafruit_GFX_Button::contains(int16_t x, int16_t y)
 	if ((y < (_y - _h/2)) || (y > (_y + _h/2))) return false;
 	return true;
 }
+
+//=============================================================================
+// DMA - Async support
+//=============================================================================
+void ILI9488_t3::dmaInterrupt(void) {
+	if (_dmaActiveDisplay)  {
+		_dmaActiveDisplay->process_dma_interrupt();
+	}
+}
+
+
+#ifdef DEBUG_ASYNC_UPDATE
+extern void dumpDMA_TCD(DMABaseClass *dmabc);
+#endif
+
+#define COUNT_SUBFRAMES_PER_FRAME (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH/DMA_PIXELS_OUTPUT_PER_DMA)
+
+void ILI9488_t3::process_dma_interrupt(void) {
+
+	// T4
+	// lets see if we are done... 
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_2, HIGH);
+#endif
+	_dma_sub_frame_count++;
+	if (_dma_sub_frame_count < COUNT_SUBFRAMES_PER_FRAME)
+	{
+		// We need to fill in the finished buffer with the next set of pixel data
+		bool frame_complete =  fillDMApixelBuffer((_dma_sub_frame_count & 1) ? _dma_pixel_buffer0 : _dma_pixel_buffer1);
+ 		if (frame_complete && ((_dma_state & ILI9488_DMA_CONT) == 0) ) {
+			_dmasettings[1].disableOnCompletion();
+		}
+	} else {
+
+		_dma_frame_count++;
+		//Serial.println("\nFrame complete");
+
+		if ((_dma_state & ILI9488_DMA_CONT) == 0) {
+			// We are in single refresh mode or the user has called cancel so
+			// Lets try to release the CS pin
+			// Lets wait until FIFO is not empty
+			// Serial.printf("Before FSR wait: %x %x\n", IMXRT_LPSPI4_S.FSR, IMXRT_LPSPI4_S.SR);
+			//Serial.println("End DMA transfer");
+#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+			while (IMXRT_LPSPI4_S.FSR & 0x1f)  ;	// wait until this one is complete
+
+			 //Serial.printf("Before SR busy wait: %x\n", IMXRT_LPSPI4_S.SR);
+			while (IMXRT_LPSPI4_S.SR & LPSPI_SR_MBF)  ;	// wait until this one is complete
+
+			_dmatx.clearComplete();
+			//Serial.println("Restore FCR");
+			IMXRT_LPSPI4_S.FCR = LPSPI_FCR_TXWATER(15); // _spi_fcr_save;	// restore the FSR status... 
+	 		IMXRT_LPSPI4_S.DER = 0;		// DMA no longer doing TX (or RX)
+
+			IMXRT_LPSPI4_S.CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
+			IMXRT_LPSPI4_S.SR = 0x3f00;	// clear out all of the other status...
+
+
+			maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));	// output Command with 8 bits
+			// Serial.printf("Output NOP (SR %x CR %x FSR %x FCR %x %x TCR:%x)\n", IMXRT_LPSPI4_S.SR, IMXRT_LPSPI4_S.CR, IMXRT_LPSPI4_S.FSR, 
+			//	IMXRT_LPSPI4_S.FCR, _spi_fcr_save, IMXRT_LPSPI4_S.TCR);
+#elif defined(__MK66FX1M0__) 
+			// T3.6
+			// Maybe only have to wait for fifo not to be full so we can output NOP>>> 
+			waitFifoNotFull();
+#else
+	// T3.5...
+#endif
+
+	#ifdef DEBUG_ASYNC_LEDS
+			digitalWriteFast(DEBUG_PIN_3, HIGH);
+	#endif
+			#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+			_pending_rx_count = 0;	// Make sure count is zero
+			#endif
+			writecommand_last(ILI9488_NOP);
+	#ifdef DEBUG_ASYNC_LEDS
+			digitalWriteFast(DEBUG_PIN_3, LOW);
+	#endif
+
+			// Serial.println("Do End transaction");
+			endSPITransaction();
+			_dma_state &= ~ILI9488_DMA_ACTIVE;
+			_dmaActiveDisplay = 0;	// We don't have a display active any more... 
+
+	 		 //Serial.println("After End transaction");
+
+		} else {
+			// Still going on. - setup to grab pixels from start of frame again...
+			_dma_sub_frame_count = 0;
+			//_dma_pixel_index = 0;
+			fillDMApixelBuffer(_dma_pixel_buffer1);
+		}
+	}
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_2, LOW);
+#endif
+	_dmatx.clearInterrupt();
+	asm("dsb");
+}
+
+
+void	ILI9488_t3::initDMASettings(void) 
+{
+	// Serial.printf("initDMASettings called %d\n", _dma_state);
+	if (_dma_state) {  // should test for init, but...
+		return;	// we already init this. 
+	}
+
+	// T3.6 and T4... 
+#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	// Now lets setup DMA access to this memory... 
+	// Try to do like T3.6 except not kludge for first word...
+	// Serial.println("DMA initDMASettings - before settings");
+	// Serial.printf("  CWW: %d %d %d\n", CBALLOC, SCREEN_DMA_NUM_SETTINGS, COUNT_WORDS_WRITE);
+	_dmasettings[0].sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
+	_dmasettings[0].destination(IMXRT_LPSPI4_S.TDR);
+	_dmasettings[0].TCD->ATTR_DST = 0;
+	_dmasettings[0].replaceSettingsOnCompletion(_dmasettings[1]);
+	_dmasettings[0].interruptAtCompletion();
+
+	_dmasettings[1].sourceBuffer(_dma_pixel_buffer1, sizeof(_dma_pixel_buffer1));
+	_dmasettings[1].destination(IMXRT_LPSPI4_S.TDR);
+	_dmasettings[1].TCD->ATTR_DST = 0;
+	_dmasettings[1].replaceSettingsOnCompletion(_dmasettings[0]);
+	_dmasettings[1].interruptAtCompletion();
+
+	// Setup DMA main object
+	//Serial.println("Setup _dmatx");
+	// Serial.println("DMA initDMASettings - before dmatx");
+	_dmatx.begin(true);
+	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX);
+	_dmatx = _dmasettings[0];
+	_dmatx.attachInterrupt(dmaInterrupt);
+#elif defined(__MK66FX1M0__) 
+	_dmasettings[0].sourceBuffer(&_dma_pixel_buffer0[3], sizeof(_dma_pixel_buffer0)-3);
+	_dmasettings[0].destination(KINETISK_SPI0.PUSHR);
+	_dmasettings[0].TCD->ATTR_DST = 0;
+	_dmasettings[0].replaceSettingsOnCompletion(_dmasettings[1]);
+	_dmasettings[0].interruptAtCompletion();
+
+	_dmasettings[1].sourceBuffer(_dma_pixel_buffer1, sizeof(_dma_pixel_buffer1));
+	_dmasettings[1].destination(KINETISK_SPI0.PUSHR);
+	_dmasettings[1].TCD->ATTR_DST = 0;
+	_dmasettings[1].replaceSettingsOnCompletion(_dmasettings[2]);
+	_dmasettings[1].interruptAtCompletion();
+
+	_dmasettings[2].sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
+	_dmasettings[2].destination(KINETISK_SPI0.PUSHR);
+	_dmasettings[2].TCD->ATTR_DST = 0;
+	_dmasettings[2].replaceSettingsOnCompletion(_dmasettings[1]);
+	_dmasettings[2].interruptAtCompletion();
+	// Setup DMA main object
+	//Serial.println("Setup _dmatx");
+	// Serial.println("DMA initDMASettings - before dmatx");
+	_dmatx.begin(true);
+	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_SPI0_TX);
+	_dmatx = _dmasettings[0];
+	_dmatx.attachInterrupt(dmaInterrupt);
+#else
+	// Teensy 3.5
+#endif
+
+	_dma_state = ILI9488_DMA_INIT;  // Should be first thing set!
+	// Serial.println("DMA initDMASettings - end");
+
+}
+#ifdef DEBUG_ASYNC_UPDATE
+void dumpDMA_TCD(DMABaseClass *dmabc)
+{
+	Serial.printf("%x %x:", (uint32_t)dmabc, (uint32_t)dmabc->TCD);
+
+	Serial.printf("SA:%x SO:%d AT:%x NB:%x SL:%d DA:%x DO: %d CI:%x DL:%x CS:%x BI:%x\n", (uint32_t)dmabc->TCD->SADDR,
+		dmabc->TCD->SOFF, dmabc->TCD->ATTR, dmabc->TCD->NBYTES, dmabc->TCD->SLAST, (uint32_t)dmabc->TCD->DADDR, 
+		dmabc->TCD->DOFF, dmabc->TCD->CITER, dmabc->TCD->DLASTSGA, dmabc->TCD->CSR, dmabc->TCD->BITER);
+}
+#endif
+
+void ILI9488_t3::dumpDMASettings() {
+#ifdef DEBUG_ASYNC_UPDATE
+#if defined(__MK66FX1M0__) 
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	// Serial.printf("DMA dump TCDs %d\n", _dmatx.channel);
+	dumpDMA_TCD(&_dmatx);
+	dumpDMA_TCD(&_dmasettings[0]);
+	dumpDMA_TCD(&_dmasettings[1]);
+#else
+#endif	
+#endif
+
+}
+
+// Fill the pixel buffer with data... 
+bool ILI9488_t3::fillDMApixelBuffer(uint8_t *dma_buffer_pointer)
+{
+	uint8_t *frame_buffer_pixel_ptr = &_pfbtft[_dma_pixel_index];
+
+	for (uint16_t i = 0; i < DMA_PIXELS_OUTPUT_PER_DMA; i++) {
+		uint16_t color = _pallet[*frame_buffer_pixel_ptr++]; 	// extract the 16 bit color
+		uint8_t r = (color & 0xF800) >> 11;
+		uint8_t g = (color & 0x07E0) >> 5;
+		uint8_t b = color & 0x001F;
+
+		r = (r * 255) / 31;
+		g = (g * 255) / 63;
+		b = (b * 255) / 31;
+	
+		*dma_buffer_pointer++ = r;
+		*dma_buffer_pointer++ = g;
+		*dma_buffer_pointer++ = b;
+	}
+	_dma_pixel_index += DMA_PIXELS_OUTPUT_PER_DMA;
+	if (_dma_pixel_index >= (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)) {
+		_dma_pixel_index = 0;
+		return true;
+	}
+
+	return false;
+}
+
+bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update the screen now.
+{
+	// Not sure if better here to check flag or check existence of buffer.
+	// Will go by buffer as maybe can do interesting things?
+	// BUGBUG:: only handles full screen so bail on the rest of it...
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (!_use_fbtft) return false;
+
+
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_1, HIGH);
+#endif
+	// Init DMA settings. 
+	initDMASettings();
+
+	// Don't start one if already active.
+	if (_dma_state & ILI9488_DMA_ACTIVE) {
+	#ifdef DEBUG_ASYNC_LEDS
+		digitalWriteFast(DEBUG_PIN_1, LOW);
+	#endif
+		return false;
+	}
+
+	_dmatx = _dmasettings[0];
+	_dmasettings[1].TCD->CSR &= ~( DMA_TCD_CSR_DREQ);  // Don't disable on completion.
+	if (!update_cont) {
+		// In this case we will only run through once...
+		_dma_state &= ~ILI9488_DMA_CONT;
+	}
+#ifdef DEBUG_ASYNC_UPDATE
+	dumpDMASettings();
+#endif
+
+	beginSPITransaction();
+	// Doing full window. 
+	// We need to convert the first page of colors.  Could/should hack up
+	// some of the above code to allow this to be done while waiting for
+	// the startup SPI output to finish. 
+	_dma_pixel_index = 0;
+	_dma_frame_count = 0;  // Set frame count back to zero. 
+	_dma_sub_frame_count = 0;	
+
+	setAddr(0, 0, _width-1, _height-1);
+	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
+
+
+#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	//==========================================
+	// T4
+	//==========================================
+	writecommand_last(ILI9488_RAMWR);
+
+	// Update TCR to 16 bit mode. and output the first entry.
+	_spi_fcr_save = IMXRT_LPSPI4_S.FCR;	// remember the FCR
+	IMXRT_LPSPI4_S.FCR = 0;	// clear water marks... 	
+	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_RXMSK /*| LPSPI_TCR_CONT*/);
+//	IMXRT_LPSPI4_S.CFGR1 |= LPSPI_CFGR1_NOSTALL;
+//	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
+ 	IMXRT_LPSPI4_S.DER = LPSPI_DER_TDDE;
+	IMXRT_LPSPI4_S.SR = 0x3f00;	// clear out all of the other status...
+
+  	_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX );
+
+ 	_dmatx = _dmasettings[0];
+
+  	_dmatx.begin(false);
+  	_dmatx.enable();
+#elif defined(__MK66FX1M0__) 
+	//==========================================
+	// T3.6
+	//==========================================
+	writecommand_cont(ILI9488_RAMWR);
+
+	// Write the first Word out before enter DMA as to setup the proper CS/DC/Continue flaugs
+	// need to deal with first pixel... 
+	write16BitColor(_pallet[*_pfbtft]);	
+	_dma_frame_count = 0;  // Set frame count back to zero. 
+	_dmaActiveDisplay = this;
+	_dma_state |= ILI9488_DMA_ACTIVE;
+	KINETISK_SPI0.RSER |= SPI_RSER_TFFF_DIRS |	 SPI_RSER_TFFF_RE;	 // Set DMA Interrupt Request Select and Enable register
+	KINETISK_SPI0.MCR &= ~SPI_MCR_HALT;  //Start transfers.
+	_dmatx.enable();
+
+#else
+#endif	
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_1, LOW);
+#endif
+
+	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
+
+	_dmaActiveDisplay = this;
+	if (update_cont) {
+		_dma_state |= ILI9488_DMA_CONT;
+	} else {
+		_dma_state &= ~ILI9488_DMA_CONT;
+
+	}
+
+	_dma_state |= ILI9488_DMA_ACTIVE;
+	return true;
+    #else
+    return false;     // no frame buffer so will never start... 
+	#endif
+
+}			 
+
+void ILI9488_t3::endUpdateAsync() {
+	// make sure it is on
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (_dma_state & ILI9488_DMA_CONT) {
+		_dma_state &= ~ILI9488_DMA_CONT; // Turn of the continueous mode
+	}
+	#endif
+}
+	
+void ILI9488_t3::waitUpdateAsyncComplete(void) 
+{
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_3, HIGH);
+#endif
+
+	while ((_dma_state & ILI9488_DMA_ACTIVE)) {
+		// asm volatile("wfi");
+	};
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_3, LOW);
+#endif
+	#endif	
+}
+
+
+
+
+
 
 //----------------------------------------------------------------------
 // Processor Specific stuff

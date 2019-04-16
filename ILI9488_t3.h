@@ -66,11 +66,11 @@
 #ifndef DISABLE_ILI9488_FRAMEBUFFER
 #if defined(__MK64FX512__) || defined(__MK66FX1M0__)
 #define ENABLE_ILI9488_FRAMEBUFFER
-//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9341_TFTHEIGHT * ILI9341_TFTWIDTH) / 65536UL))+1)
+//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9488_TFTHEIGHT * ILI9488_TFTWIDTH) / 65536UL))+1)
 #define SCREEN_DMA_NUM_SETTINGS 3 // see if making it a constant value makes difference...
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
 #define ENABLE_ILI9488_FRAMEBUFFER
-//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9341_TFTHEIGHT * ILI9341_TFTWIDTH) / 65536UL))+1)
+//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9488_TFTHEIGHT * ILI9488_TFTWIDTH) / 65536UL))+1)
 #define SCREEN_DMA_NUM_SETTINGS 4 // see if making it a constant value makes difference...
 #endif
 #endif
@@ -185,6 +185,10 @@ typedef struct {
 	unsigned char cap_height;
 } ILI9488_t3_font_t;
 
+#define ILI9488_DMA_INIT	0x01 	// We have init the Dma settings
+#define ILI9488_DMA_CONT	0x02 	// continuous mode
+#define ILI9488_DMA_ACTIVE  0x80    // Is currently active
+
 //These enumerate the text plotting alignment (reference datum point)
 #define TL_DATUM 0 // Top left (default)
 #define TC_DATUM 1 // Top centre
@@ -205,8 +209,23 @@ typedef struct {
 #ifdef __cplusplus
 // At all other speeds, ILI9241_KINETISK__pspi->beginTransaction() will use the fastest available clock
 #include <SPI.h>
+#include <SPI.h>
+#if defined(__MK64FX512__) || defined(__MK66FX1M0__)
+#if F_BUS >= 64000000
+#define ILI9488_SPICLOCK 64000000
+#define ILI9488_SPICLOCK_READ 4000000
+#else
 #define ILI9488_SPICLOCK 30000000
 #define ILI9488_SPICLOCK_READ 2000000
+#endif
+#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+#define ILI9488_SPICLOCK 30000000
+//#define ILI9488_SPICLOCK 72000000
+#define ILI9488_SPICLOCK_READ 4000000
+#else
+#define ILI9488_SPICLOCK 30000000
+#define ILI9488_SPICLOCK_READ 2000000
+#endif
 
 class ILI9488_t3 : public Print
 {
@@ -376,11 +395,40 @@ class ILI9488_t3 : public Print
 	void resetScrollBackgroundColor(uint16_t color);
 	
 	// added support to use optional Frame buffer
-	void	setFrameBuffer(uint16_t *frame_buffer);
-	uint16_t *getFrameBuffer() {return _pfbtft;}
+	void	setFrameBuffer(uint8_t *frame_buffer);
+	uint8_t *getFrameBuffer() {return _pfbtft;}
 	uint8_t useFrameBuffer(boolean b);		// use the frame buffer?  First call will allocate
 	void	freeFrameBuffer(void);			// explicit call to release the buffer
 	void	updateScreen(void);				// call to say update the screen now. 
+
+	// Support for user to set Pallet. 
+	void	setPallet(uint16_t *pal, uint16_t count);	// <= 256
+	void	colorsArePalletIndex(boolean b) {_colors_are_index = b;}
+	boolean	colorsArePalletIndex() {return _colors_are_index;}
+	
+	// probably not called directly... 
+	uint8_t doActualConvertColorToIndex(uint16_t color);  
+
+	inline uint8_t mapColorToPalletIndex(uint16_t color) 
+		{
+			if (_pallet && _colors_are_index) return (uint8_t)color;
+			return doActualConvertColorToIndex(color);		
+		}
+		
+	bool	updateScreenAsync(bool update_cont = false);	// call to say update the screen optinoally turn into continuous mode. 
+	void	waitUpdateAsyncComplete(void);
+	void	endUpdateAsync();			 // Turn of the continueous mode fla
+	void	dumpDMASettings();
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	uint32_t frameCount() {return _dma_frame_count; }
+	boolean	asyncUpdateActive(void)  {return (_dma_state & ILI9488_DMA_ACTIVE);}
+	void	initDMASettings(void);
+	#else
+	uint32_t frameCount() {return 0; }
+	boolean	asyncUpdateActive(void)  {return false;}
+	uint32_t frameCount() {return 0; }
+	#endif
+
 
  protected:
     SPIClass                *spi_port;
@@ -443,12 +491,48 @@ class ILI9488_t3 : public Print
     volatile uint8_t *_csport;
 #endif
 
-#ifdef ENABLE_ILI9488_FRAMEBUFFER
+//#ifdef ENABLE_ILI9488_FRAMEBUFFER
     // Add support for optional frame buffer
-    uint16_t	*_pfbtft;						// Optional Frame buffer 
+    uint8_t		*_pfbtft;						// Optional Frame buffer 
     uint8_t		_use_fbtft;						// Are we in frame buffer mode?
-    uint16_t	*_we_allocated_buffer;			// We allocated the buffer; 
-#endif
+    uint8_t		*_we_allocated_buffer;			// We allocated the buffer; 
+
+    uint16_t	*_pallet;						// Support for user to set Pallet. 
+    uint16_t	_pallet_size;					// How big is the pallet
+    uint16_t	_pallet_count;					// how many items are in it...
+    boolean		_colors_are_index;				// are the values passed in index or color?
+
+    // Add DMA support. 
+	static  ILI9488_t3 		*_dmaActiveDisplay;  // Use pointer to this as a way to get back to object...
+	static volatile uint8_t  	_dma_state;  		// DMA status
+	static volatile uint32_t	_dma_frame_count;	// Can return a frame count...
+	#if defined(__MK66FX1M0__) 
+	static DMASetting 	_dmasettings[3];
+	static DMAChannel  	_dmatx;
+	#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	// Going to try it similar to T4.
+	static DMASetting 	_dmasettings[2];
+	static DMAChannel  	_dmatx;
+	uint32_t 			_spi_fcr_save;		// save away previous FCR register value
+	#else
+	#endif	
+	static void dmaInterrupt(void);
+	void process_dma_interrupt(void);
+	bool fillDMApixelBuffer(uint8_t *buffer_ptr);
+
+	enum {DMA_PIXELS_OUTPUT_PER_DMA=80};  // How many pixels at a time?
+	uint8_t _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+	uint8_t _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+	static volatile uint32_t _dma_pixel_index;
+	static volatile uint16_t	_dma_sub_frame_count;	// Can return a frame count...
+
+
+//#endif
+
+
+//----------------------------------------------------------------------
+// Processor Specific stuff
+
 	void DIRECT_WRITE_LOW(volatile uint32_t * base, uint32_t mask);
 	void DIRECT_WRITE_HIGH(volatile uint32_t * base, uint32_t mask);
 	void writecommand_cont(uint8_t c);
