@@ -51,12 +51,12 @@ Some of the New methods for this include:
 Additional APIs
 ---------------
 In addition, this library now has some of the API's and functionality that has been requested in a pull request.  In particular it now supports, the ability to set a clipping rectangle as well as setting an origin that is used with the drawing primitives.   These new API's include:
-
+```c++
 	void setOrigin(int16_t x = 0, int16_t y = 0); 
 	void getOrigin(int16_t* x, int16_t* y);
 	void setClipRect(int16_t x1, int16_t y1, int16_t w, int16_t h); 
 	void setClipRect();
-
+```
 Discussion regarding the optimized version for the ILI9341 which is based on:
 ==========================
 
