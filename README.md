@@ -3,19 +3,19 @@ Overview and Warning:
 This is a modified version of the official PJRC ILI9341_t3 library (https://github.com/PaulStoffregen/ILI9341_t3) to work with ILI9488 displays. And it is always a Work In Progress.
 
 This library borrows some concepts and functionality from another ILI9341 library, https://github.com/KurtE/ILI9341_t3n.  It also incorporates functionality from the TFT_ILI9341_ESP, https://github.com/Bodmer/TFT_ILI9341_ESP, for additional functions:
-    int16_t  drawNumber(long long_num,int poX, int poY);
+`    int16_t  drawNumber(long long_num,int poX, int poY);
     int16_t  drawFloat(float floatNumber,int decimal,int poX, int poY);   
     int16_t drawString(const String& string, int poX, int poY);
     int16_t drawString1(char string[], int16_t len, int poX, int poY);
-    void setTextDatum(uint8_t datum);
+    void setTextDatum(uint8_t datum);`
 
 In addition, scrolling text has been added using appropriate function from, https://github.com/vitormhenrique/ILI9341_t3:
-    void enableScroll(void);
+`    void enableScroll(void);
     void resetScrollBackgroundColor(uint16_t color);
     void setScrollTextArea(int16_t x, int16_t y, int16_t w, int16_t h);
     void setScrollBackgroundColor(uint16_t color);
     void scrollTextArea(uint8_t scrollSize);
-    void resetScrollBackgroundColor(uint16_t color);
+    void resetScrollBackgroundColor(uint16_t color);`
 
 This library was created to allow extended use on the ILI9488 larger display and supports T3.5, t3.6 and beyond.
 
@@ -98,8 +98,6 @@ Also requires the Adafruit_GFX library for Arduino.
 Future Updates
 ==============
 
-I am hoping to phase out SPIN and be able to directly use SPI.  This has been helped by the recent updates to SPI, which all of the SPI objects are of one class. Currently I 
-still need a few additional things like pointers to the underlying SPI registers.  But hopefully will get there. 
 
 Again WIP
 =====
