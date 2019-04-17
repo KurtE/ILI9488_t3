@@ -57,17 +57,6 @@ In addition, this library now has some of the API's and functionality that has b
 	void setClipRect(int16_t x1, int16_t y1, int16_t w, int16_t h); 
 	void setClipRect();
 ```
-Discussion regarding the optimized version for the ILI9341 which is based on:
-==========================
-
-http://forum.pjrc.com/threads/26305-Highly-optimized-ILI9341-%28320x240-TFT-color-display%29-library
-
-This version of the library supports the Adafruit displays that use the ILI9341 displays, but in
-addition are setup to support the displays that are sold by PJRC, which include:
-	http://pjrc.com/store/display_ili9341.html
-	http://pjrc.com/store/display_ili9341_touch.html
-
-Note: this library like the ILI9341_t3 library which it is derived from no longer  require any of the Adafruit libraries, such as their Adafruit_ILI9341 and Adafruit_GFX libraries APIS are based on.
 
 Adafruit library info
 =======================
