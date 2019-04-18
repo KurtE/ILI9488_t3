@@ -1406,12 +1406,8 @@ void ILI9488_t3::writeRectNBPP(int16_t x, int16_t y, int16_t w, int16_t h,  uint
 
 static const uint8_t init_commands[] = {
 	16, 0xE0, 0x00,0x03, 0x09, 0x08, 0x16, 0x0A, 0x3F, 0x78, 0x4C, 0x09, 0x0A, 0x08, 0x16, 0x1A, 0x0F,
-	16, 0x00, 0x16, 0x19, 0x03, 0x0F, 0x05, 0x32, 0x45, 0x46, 0x04, 0x0E, 0x0D, 0x35, 0x37, 0x0F,
+	16, 0XE1, 0x00, 0x16, 0x19, 0x03, 0x0F, 0x05, 0x32, 0x45, 0x46, 0x04, 0x0E, 0x0D, 0x35, 0x37, 0x0F,
 	3, 0XC0, 0x17, 0x15,
-	4, 0xE8, 0x85, 0x00, 0x78,
-	6, 0xCB, 0x39, 0x2C, 0x00, 0x34, 0x02,
-	2, 0xF7, 0x20,
-	3, 0xEA, 0x00, 0x00,   //Power Control 1
 	2, 0xC1, 0x41,       //Power Control 2
 	4, 0xC5, 0x00, 0x12, 0x80,        //Power Control 3
 	2, 0x36, 0x48,      //Memory Access
@@ -1423,13 +1419,22 @@ static const uint8_t init_commands[] = {
 	2, 0x02, 0x02,		//MCU
 	2, 0xE9, 0x00,      // Set Image Functio,Disable 24 bit data
 	5, 0xF7, 0xA9, 0x51, 0x2C, 0x82,          // Adjust Control
+
+	//4, 0xE8, 0x85, 0x00, 0x78,
+	//6, 0xCB, 0x39, 0x2C, 0x00, 0x34, 0x02,
+	//2, 0xF7, 0x20,
+	//3, 0xEA, 0x00, 0x00,   //Power Control 1
+	
 	0
 };
+
 
 void ILI9488_t3::begin(void)
 {
     // verify SPI pins are valid;
+    //Serial.printf("::begin %x %x %x %d %d %d\n", (uint32_t)spi_port, (uint32_t)_pkinetisk_spi, (uint32_t)_spi_hardware, _mosi, _miso, _sclk);
     #ifdef KINETISK
+	/*
     #if defined(__MK64FX512__) || defined(__MK66FX1M0__)
     // Allow to work with mimimum of MOSI and SCK
     if ((_mosi == 255 || _mosi == 11 || _mosi == 7 || _mosi == 28)  && (_sclk == 255 || _sclk == 13 || _sclk == 14 || _sclk == 27)) 
@@ -1455,6 +1460,69 @@ void ILI9488_t3::begin(void)
 	} else {
         return; // not valid pins...
 	}
+	*/
+
+	if ((_mosi != 255) || (_miso != 255) || (_sclk != 255)) {
+		if(spi_port == &SPI){
+			if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk)) {
+				//spi_port= &SPI;
+				uint32_t *pa = (uint32_t*)((void*)spi_port);
+				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+				_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
+				_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+			}
+			Serial.println("ILI9488_t3n: SPI automatically selected");
+		} else if(spi_port == &SPI1){
+			if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsMISO(_miso) && SPI1.pinIsSCK(_sclk)) {
+				//spi_port= &SPI1;
+				uint32_t *pa = (uint32_t*)((void*)spi_port);
+				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+				_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
+				_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+			}
+			Serial.println("ILI9488_t3n: SPI1 automatically selected");
+		} else if(spi_port == &SPI2){
+			if (SPI2.pinIsMOSI(_mosi) && SPI2.pinIsMISO(_miso) && SPI2.pinIsSCK(_sclk)) {
+				//spi_port= &SPI2;
+				uint32_t *pa = (uint32_t*)((void*)spi_port);
+				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+				_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
+				_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+			}
+			Serial.println("ILI9488_t3n: SPI2 automatically selected");
+		} else {
+			Serial.println("SPI Port not supported");
+		}
+
+		uint8_t mosi_sck_bad = false;
+		if(!(spi_port->pinIsMOSI(_mosi)))  {
+			Serial.print(" MOSI");
+			mosi_sck_bad = true;
+		}
+		if (!spi_port->pinIsSCK(_sclk)) {
+			Serial.print(" SCLK");
+			mosi_sck_bad = true;
+		}
+
+		// Maybe allow us to limp with only MISO bad
+		if(!(spi_port->pinIsMISO(_miso))) {
+			Serial.print(" MISO");
+			_miso = 0xff;	// set miso to 255 as flag it is bad
+		}
+		Serial.println();
+		
+		if (mosi_sck_bad) {
+			Serial.print("ILI9488_t3n: Error not valid SPI pins:");
+			return; // not valid pins...
+		}
+		
+		Serial.printf("MOSI:%d MISO:%d SCK:%d\n\r", _mosi, _miso, _sclk);			
+        spi_port->setMOSI(_mosi);
+        if (_miso != 0xff) spi_port->setMISO(_miso);
+        spi_port->setSCK(_sclk);
+	}		
+
+	
 	spi_port->begin();
 	if (spi_port->pinIsChipSelect(_cs, _dc)) {
 		pcs_data = spi_port->setCS(_cs);
@@ -1467,14 +1535,52 @@ void ILI9488_t3::begin(void)
 			pinMode(_cs, OUTPUT);
 			_csport    = portOutputRegister(digitalPinToPort(_cs));
 			_cspinmask = digitalPinToBitMask(_cs);
-
-
 		} else {
 			pcs_data = 0;
 
 		}
 	}
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x 
+	if(spi_port == &SPI){
+		if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk)) {
+			//spi_port= &SPI;
+			uint32_t *pa = (uint32_t*)((void*)spi_port);
+			_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+			_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
+		}
+		Serial.println("ILI9488_t3n: (T4) SPI automatically selected");
+	} else {
+		Serial.println("T4: SPI Port not supported");
+		return;
+	}
+
+		uint8_t mosi_sck_bad = false;
+		if(!(spi_port->pinIsMOSI(_mosi)))  {
+			Serial.print(" MOSI");
+			mosi_sck_bad = true;
+		}
+		if (!spi_port->pinIsSCK(_sclk)) {
+			Serial.print(" SCLK");
+			mosi_sck_bad = true;
+		}
+
+		// Maybe allow us to limp with only MISO bad
+		if(!(spi_port->pinIsMISO(_miso))) {
+			Serial.print(" MISO");
+			_miso = 0xff;	// set miso to 255 as flag it is bad
+		}
+		Serial.println();
+		
+		if (mosi_sck_bad) {
+			Serial.print("ILI9488_t3n: Error not valid SPI pins:");
+			return; // not valid pins...
+		}
+		
+		Serial.printf("MOSI:%d MISO:%d SCK:%d\n\r", _mosi, _miso, _sclk);			
+        spi_port->setMOSI(_mosi);
+        if (_miso != 0xff) spi_port->setMISO(_miso);
+        spi_port->setSCK(_sclk);
+	
 	_pending_rx_count = 0;
 	spi_port->begin();
 	_csport = portOutputRegister(_cs);
@@ -1511,12 +1617,7 @@ void ILI9488_t3::begin(void)
 	}
 
 	// REAL HACK TO GET SPI information!!!!
-  	uint32_t *pa = (uint32_t*)((void*)spi_port);
-	_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-    #ifdef KINETISK
-	_fifo_size = _spi_hardware->queue_size;		// remember the queue size
-	#endif
-	/*
+ 	/*
 	uint8_t x = readcommand8(ILI9488_RDMODE);
 	Serial.print("\nDisplay Power Mode: 0x"); Serial.println(x, HEX);
 	x = readcommand8(ILI9488_RDMADCTL);
@@ -1546,6 +1647,7 @@ void ILI9488_t3::begin(void)
 	writecommand_last(ILI9488_DISPON);    // Display on
 	endSPITransaction();
 }
+
 
 
 
