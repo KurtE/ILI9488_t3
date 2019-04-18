@@ -66,12 +66,8 @@
 #ifndef DISABLE_ILI9488_FRAMEBUFFER
 #if defined(__MK64FX512__) || defined(__MK66FX1M0__)
 #define ENABLE_ILI9488_FRAMEBUFFER
-//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9488_TFTHEIGHT * ILI9488_TFTWIDTH) / 65536UL))+1)
-#define SCREEN_DMA_NUM_SETTINGS 3 // see if making it a constant value makes difference...
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
 #define ENABLE_ILI9488_FRAMEBUFFER
-//#define SCREEN_DMA_NUM_SETTINGS (((uint32_t)((2 * ILI9488_TFTHEIGHT * ILI9488_TFTWIDTH) / 65536UL))+1)
-#define SCREEN_DMA_NUM_SETTINGS 4 // see if making it a constant value makes difference...
 #endif
 #endif
 
@@ -511,6 +507,13 @@ class ILI9488_t3 : public Print
 	#if defined(__MK66FX1M0__) 
 	static DMASetting 	_dmasettings[3];
 	static DMAChannel  	_dmatx;
+	#elif defined(__MK64FX512__)
+	// T3.5 - had issues scatter/gather so do just use channels/interrupts
+	// and update and continue
+	static DMAChannel  	_dmatx;
+//	static DMAChannel  	_dmarx;
+//	static uint16_t 	_dma_count_remaining;
+//	static uint16_t		_dma_write_size_words;
 	#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
 	// Going to try it similar to T4.
 	static DMASetting 	_dmasettings[2];

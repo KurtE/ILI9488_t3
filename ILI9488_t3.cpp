@@ -62,11 +62,17 @@
 #define	COUNT_WORDS_WRITE  ((ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)/SCREEN_DMA_NUM_SETTINGS) // Note I know the divide will give whole number
 #endif
 
+#define DEBUG_ASYNC_UPDATE
 #if defined(__MK66FX1M0__) 
 DMASetting 	ILI9488_t3::_dmasettings[3];
 DMAChannel 	ILI9488_t3::_dmatx;
+#elif defined(__MK64FX512__)
+DMAChannel  ILI9488_t3::_dmatx;
+//DMAChannel  ILI9488_t3::_dmarx;
+//uint16_t 	ILI9488_t3::_dma_count_remaining;
+//uint16_t	ILI9488_t3::_dma_write_size_words;
+//volatile short _dma_dummy_rx;
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
-//#define DEBUG_ASYNC_UPDATE
 //#define DEBUG_ASYNC_LEDS	// Enable to use digitalWrites to Debug
 #ifdef DEBUG_ASYNC_LEDS
 #define DEBUG_PIN_1 2
@@ -93,18 +99,7 @@ volatile uint16_t	ILI9488_t3::_dma_sub_frame_count = 0;	// Can return a frame co
 ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, uint8_t mosi, uint8_t sclk, uint8_t miso)
 {
 	spi_port = SPIWire;
-#if defined(__IMXRT1052__) || defined(__IMXRT1062__)
-	_pimxrt_spi = &IMXRT_LPSPI4_S; //0x403A0000;
-#elif defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
-	if ( SPIWire == (SPIClass*)&SPI ) _pkinetisk_spi = &KINETISK_SPI0;  // 0x4002C000;
-    #if defined(__MK64FX512__) || defined(__MK66FX1M0__)
-	if ( SPIWire == (SPIClass*)&SPI1 ) _pkinetisk_spi = &KINETISK_SPI1; //0x4002D000;
-	if ( SPIWire == (SPIClass*)&SPI2 ) _pkinetisk_spi = &KINETISK_SPI2; //0x400AC000;
-	#endif
-#elif defined(KINETISL)
-	if ( SPIWire == (SPIClass*)&SPI ) _spi_port_memorymap = 0x40076000;
-	if ( SPIWire == (SPIClass*)&SPI1 ) _spi_port_memorymap = 0x40077000;
-#endif
+
 	_cs   = cs;
 	_dc   = dc;
 	_rst  = rst;
@@ -130,6 +125,15 @@ ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, u
 	// Probably should check that it did not fail... 
 	_pallet_size = 0;					// How big is the pallet
 	_pallet_count = 0;					// how many items are in it...
+
+ 	uint32_t *pa = (uint32_t*)((void*)spi_port);
+	_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+    #ifdef KINETISK
+	_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
+	_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+	#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
+	_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
+	#endif
 	setClipRect();
 	setOrigin();
 }
@@ -913,7 +917,7 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 	while (txCount || rxCount) {
 		// transmit another byte if possible
 		//if (txCount && ((_pkinetisk_spi->SR & 0xF000) >> 12) < SPIClass::hardware().queue_size()) {
-		if (txCount && ((_pkinetisk_spi->SR & 0xF000) >> 12) < 4) {
+		if (txCount && ((_pkinetisk_spi->SR & 0xF000) >> 12) < _fifo_size) {
 			txCount--;
 			if (txCount) {
 				_pkinetisk_spi->PUSHR = READ_PIXEL_PUSH_BYTE | (pcs_data << 16) | SPI_PUSHR_CTAS(0)| SPI_PUSHR_CONT;
@@ -3062,10 +3066,10 @@ extern void dumpDMA_TCD(DMABaseClass *dmabc);
 
 #define COUNT_SUBFRAMES_PER_FRAME (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH/DMA_PIXELS_OUTPUT_PER_DMA)
 
+#if defined(__IMXRT1052__) || defined(__IMXRT1062__) || defined(__MK66FX1M0__)
+// T3.6 and T4 processing
 void ILI9488_t3::process_dma_interrupt(void) {
 
-	// T4
-	// lets see if we are done... 
 #ifdef DEBUG_ASYNC_LEDS
 	digitalWriteFast(DEBUG_PIN_2, HIGH);
 #endif
@@ -3110,8 +3114,6 @@ void ILI9488_t3::process_dma_interrupt(void) {
 			// T3.6
 			// Maybe only have to wait for fifo not to be full so we can output NOP>>> 
 			waitFifoNotFull();
-#else
-	// T3.5...
 #endif
 
 	#ifdef DEBUG_ASYNC_LEDS
@@ -3146,6 +3148,44 @@ void ILI9488_t3::process_dma_interrupt(void) {
 	asm("dsb");
 }
 
+
+// T3.5 - without scatter gather support
+#elif defined(__MK64FX512__)
+void ILI9488_t3::process_dma_interrupt(void) {
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_2, HIGH);
+#endif
+	// Clear out the interrupt and complete state
+	_dmatx.clearInterrupt();
+	_dmatx.clearComplete();
+
+	// Guess if we we are totally done or not...
+	if (_dma_pixel_index == 0)  {
+		_dma_frame_count++;
+		_dma_sub_frame_count = 0;
+		if ((_dma_state & ILI9488_DMA_CONT) == 0) {
+			// We are done!
+			_pkinetisk_spi->RSER = 0;
+			//_pkinetisk_spi->MCR = SPI_MCR_MSTR | SPI_MCR_CLR_RXF | SPI_MCR_PCSIS(0x1F);  // clear out the queue
+			_pkinetisk_spi->SR = 0xFF0F0000;
+
+			writecommand_last(ILI9488_NOP);
+			endSPITransaction();
+			_dma_state &= ~ILI9488_DMA_ACTIVE;
+			_dmaActiveDisplay = 0;	// We don't have a display active any more... 
+		}
+	}
+
+	_dma_sub_frame_count++;
+
+	_dmatx.sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
+	fillDMApixelBuffer(_dma_pixel_buffer0);
+	_dmatx.enable();
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_2, LOW);
+#endif
+}
+#endif
 
 void	ILI9488_t3::initDMASettings(void) 
 {
@@ -3204,8 +3244,47 @@ void	ILI9488_t3::initDMASettings(void)
 	_dmatx.triggerAtHardwareEvent(_spi_hardware->tx_dma_channel);
 	_dmatx = _dmasettings[0];
 	_dmatx.attachInterrupt(dmaInterrupt);
-#else
+#elif defined(__MK64FX512__)
 	// Teensy 3.5
+	// T3.5
+	// Lets setup the write size.  For SPI we can use up to 32767 so same size as we use on T3.6...
+	// But SPI1 and SPI2 max of 511.  We will use 480 in that case as even divider...
+/*
+	_dmarx.disable();
+	_dmarx.source(_pkinetisk_spi->POPR);
+	_dmarx.TCD->ATTR_SRC = 1;
+	_dmarx.destination(_dma_dummy_rx);
+	_dmarx.disableOnCompletion();
+	_dmarx.triggerAtHardwareEvent(_spi_hardware->rx_dma_channel);
+	_dmarx.attachInterrupt(dmaInterrupt);
+	_dmarx.interruptAtCompletion();
+*/
+	// We may be using settings chain here so lets set it up. 
+	// Now lets setup TX chain.  Note if trigger TX is not set
+	// we need to have the RX do it for us.
+	// BUGBUG:: REAL Hack
+	if (!_csport) {
+		// Should also probably change the masks... But
+		pinMode(_cs, OUTPUT);
+		_csport    = portOutputRegister(digitalPinToPort(_cs));
+		_cspinmask = digitalPinToBitMask(_cs);
+		Serial.println("DMASettings (T3.5) change CS pin to standard IO");
+	}
+
+	_dmatx.disable();
+	_dmatx.sourceBuffer(&_dma_pixel_buffer0[3], sizeof(_dma_pixel_buffer0)-3);
+	_dmatx.destination(_pkinetisk_spi->PUSHR);
+	_dmatx.TCD->ATTR_DST = 0;
+	_dmatx.disableOnCompletion();
+	_dmatx.interruptAtCompletion();
+	_dmatx.attachInterrupt(dmaInterrupt);
+
+	// SPI1/2 only have one dma_channel
+	if (_spi_hardware->tx_dma_channel) {
+		_dmatx.triggerAtHardwareEvent(_spi_hardware->tx_dma_channel);
+	} else {
+		_dmatx.triggerAtHardwareEvent(_spi_hardware->rx_dma_channel);
+	}
 #endif
 
 	_dma_state = ILI9488_DMA_INIT;  // Should be first thing set!
@@ -3226,6 +3305,13 @@ void dumpDMA_TCD(DMABaseClass *dmabc)
 void ILI9488_t3::dumpDMASettings() {
 #ifdef DEBUG_ASYNC_UPDATE
 #if defined(__MK66FX1M0__) 
+	dumpDMA_TCD(&_dmatx);
+	dumpDMA_TCD(&_dmasettings[0]);
+	dumpDMA_TCD(&_dmasettings[1]);
+	dumpDMA_TCD(&_dmasettings[1]);
+#elif defined(__MK64FX512__)
+	dumpDMA_TCD(&_dmatx);
+//	dumpDMA_TCD(&_dmarx);
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
 	// Serial.printf("DMA dump TCDs %d\n", _dmatx.channel);
 	dumpDMA_TCD(&_dmatx);
@@ -3288,13 +3374,16 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 		return false;
 	}
 
+#if !defined(__MK64FX512__)
 	_dmatx = _dmasettings[0];
 	_dmasettings[1].TCD->CSR &= ~( DMA_TCD_CSR_DREQ);  // Don't disable on completion.
+#endif
 	if (!update_cont) {
 		// In this case we will only run through once...
 		_dma_state &= ~ILI9488_DMA_CONT;
 	}
 #ifdef DEBUG_ASYNC_UPDATE
+	Serial.println("dumpDMASettings called");
 	dumpDMASettings();
 #endif
 
@@ -3306,9 +3395,9 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	_dma_pixel_index = 0;
 	_dma_frame_count = 0;  // Set frame count back to zero. 
 	_dma_sub_frame_count = 0;	
+	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
 
 	setAddr(0, 0, _width-1, _height-1);
-	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
 
 
 #if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
@@ -3348,13 +3437,29 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	_pkinetisk_spi->MCR &= ~SPI_MCR_HALT;  //Start transfers.
 	_dmatx.enable();
 
-#else
+#elif defined(__MK64FX512__)
+	//==========================================
+	// T3.5
+	//==========================================
+	writecommand_cont(ILI9488_RAMWR);
+
+	// Write the first Word out before enter DMA as to setup the proper CS/DC/Continue flaugs
+	// need to deal with first pixel... 
+	write16BitColor(_pallet[*_pfbtft]);	
+	_dma_frame_count = 0;  // Set frame count back to zero. 
+	_dmaActiveDisplay = this;
+	_dma_state |= ILI9488_DMA_ACTIVE;
+	_pkinetisk_spi->RSER |= SPI_RSER_TFFF_DIRS | SPI_RSER_TFFF_RE;	 // Set DMA Interrupt Request Select and Enable register
+	_pkinetisk_spi->MCR &= ~SPI_MCR_HALT;  //Start transfers.
+	_dmatx.sourceBuffer(&_dma_pixel_buffer0[3], sizeof(_dma_pixel_buffer0)-3);
+  	//_dmatx.begin(false);
+	_dmatx.enable();
 #endif	
 #ifdef DEBUG_ASYNC_LEDS
 	digitalWriteFast(DEBUG_PIN_1, LOW);
 #endif
 
-	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
+//	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
 
 	_dmaActiveDisplay = this;
 	if (update_cont) {
@@ -3518,7 +3623,7 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 		do {
 			sr = _pkinetisk_spi->SR;
 			if (sr & 0xF0) tmp = _pkinetisk_spi->POPR;  // drain RX FIFO
-		} while ((sr & (15 << 12)) > ((_fifo_size-1) << 12));
+		} while ((uint16_t)(sr & (15 << 12)) > ((uint16_t)(_fifo_size-1) << 12));
 	}
 	void ILI9488_t3::waitFifoEmpty(void) {
 		uint32_t sr;
