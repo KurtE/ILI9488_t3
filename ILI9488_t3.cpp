@@ -3160,7 +3160,8 @@ void ILI9488_t3::process_dma_interrupt(void) {
 	_dmatx.clearComplete();
 
 	// Guess if we we are totally done or not...
-	if (_dma_pixel_index == 0)  {
+	// Hack since we are reading a page ahead look at pixel_index 
+	if (_dma_pixel_index == DMA_PIXELS_OUTPUT_PER_DMA)  {
 		_dma_frame_count++;
 		_dma_sub_frame_count = 0;
 		if ((_dma_state & ILI9488_DMA_CONT) == 0) {
@@ -3178,9 +3179,18 @@ void ILI9488_t3::process_dma_interrupt(void) {
 
 	_dma_sub_frame_count++;
 
-	_dmatx.sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
-	fillDMApixelBuffer(_dma_pixel_buffer0);
-	_dmatx.enable();
+	// Now lets alternate buffers
+	if (_dmatx.TCD->SADDR < (void*)_dma_pixel_buffer1) {
+		_dmatx.sourceBuffer(_dma_pixel_buffer1, sizeof(_dma_pixel_buffer1));
+		_dmatx.enable();
+
+		fillDMApixelBuffer(_dma_pixel_buffer0);
+	} else {
+		_dmatx.sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
+		_dmatx.enable();
+
+		fillDMApixelBuffer(_dma_pixel_buffer1);
+	}
 #ifdef DEBUG_ASYNC_LEDS
 	digitalWriteFast(DEBUG_PIN_2, LOW);
 #endif
@@ -3461,6 +3471,8 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	_pkinetisk_spi->MCR &= ~SPI_MCR_HALT;  //Start transfers.
   	//_dmatx.begin(false);
 	_dmatx.enable();
+	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
+
 #endif	
 #ifdef DEBUG_ASYNC_LEDS
 	digitalWriteFast(DEBUG_PIN_1, LOW);
