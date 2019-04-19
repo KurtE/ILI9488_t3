@@ -3308,7 +3308,7 @@ void ILI9488_t3::dumpDMASettings() {
 	dumpDMA_TCD(&_dmatx);
 	dumpDMA_TCD(&_dmasettings[0]);
 	dumpDMA_TCD(&_dmasettings[1]);
-	dumpDMA_TCD(&_dmasettings[1]);
+	dumpDMA_TCD(&_dmasettings[2]);
 #elif defined(__MK64FX512__)
 	dumpDMA_TCD(&_dmatx);
 //	dumpDMA_TCD(&_dmarx);
@@ -3395,15 +3395,14 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	_dma_pixel_index = 0;
 	_dma_frame_count = 0;  // Set frame count back to zero. 
 	_dma_sub_frame_count = 0;	
-	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
-
-	setAddr(0, 0, _width-1, _height-1);
-
+	
 
 #if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
 	//==========================================
 	// T4
 	//==========================================
+	setAddr(0, 0, _width-1, _height-1);
+	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
 	writecommand_last(ILI9488_RAMWR);
 
 	// Update TCR to 16 bit mode. and output the first entry.
@@ -3421,10 +3420,14 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 
   	_dmatx.begin(false);
   	_dmatx.enable();
+	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
 #elif defined(__MK66FX1M0__) 
 	//==========================================
 	// T3.6
 	//==========================================
+
+	setAddr(0, 0, _width-1, _height-1);
+	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
 	writecommand_cont(ILI9488_RAMWR);
 
 	// Write the first Word out before enter DMA as to setup the proper CS/DC/Continue flaugs
@@ -3436,11 +3439,15 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	_pkinetisk_spi->RSER |= SPI_RSER_TFFF_DIRS |	 SPI_RSER_TFFF_RE;	 // Set DMA Interrupt Request Select and Enable register
 	_pkinetisk_spi->MCR &= ~SPI_MCR_HALT;  //Start transfers.
 	_dmatx.enable();
+	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
 
 #elif defined(__MK64FX512__)
 	//==========================================
 	// T3.5
 	//==========================================
+	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
+
+	setAddr(0, 0, _width-1, _height-1);
 	writecommand_cont(ILI9488_RAMWR);
 
 	// Write the first Word out before enter DMA as to setup the proper CS/DC/Continue flaugs
@@ -3459,7 +3466,6 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	digitalWriteFast(DEBUG_PIN_1, LOW);
 #endif
 
-//	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
 
 	_dmaActiveDisplay = this;
 	if (update_cont) {
