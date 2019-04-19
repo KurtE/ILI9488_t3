@@ -2,6 +2,8 @@ Overview and Warning:
 =====
 This is a modified version of the official PJRC ILI9341_t3 library (https://github.com/PaulStoffregen/ILI9341_t3) to work with ILI9488 displays. And it is always a Work In Progress.
 
+Currently the library has been verified to work with Teensy 3.2 (no framebuffer), T3.5, and T3.6.  Teensy LC is not supported at this time.
+
 This library borrows some concepts and functionality from another ILI9341 library, https://github.com/KurtE/ILI9341_t3n.  It also incorporates functionality from the TFT_ILI9341_ESP, https://github.com/Bodmer/TFT_ILI9341_ESP, for additional functions:
 ```c++
     int16_t  drawNumber(long long_num,int poX, int poY);
