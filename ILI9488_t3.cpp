@@ -795,7 +795,7 @@ uint8_t ILI9488_t3::readcommand8(uint8_t c, uint8_t index)
 
 	writecommand_cont(c);
 	writedata8_cont(0);
-	uint8_t r = waitTransmitCompleteReturnLast();
+	uint8_t r = 0; //waitTransmitCompleteReturnLast();
 	endSPITransaction();
 	return r;
 
@@ -1621,8 +1621,47 @@ void ILI9488_t3::begin(void)
 		DIRECT_WRITE_HIGH(_dcport, _dcpinmask);
 	}
 	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7));
+#elif defined(KINETISL)
+	if ((_mosi != 255) || (_miso != 255) || (_sclk != 255)) {
+		// Lets verify that all of the specifid pins are valid... right now only care about MSOI and sclk... 
+		if (! (((_mosi == 255) || spi_port->pinIsMOSI(_mosi)) && ((_sclk == 255) || spi_port->pinIsSCK(_sclk)))) {
+			// one of those two pins are not valid, lets try to see if there is a valid one
+			// In this case we will not check for 255 as we assume both most be specified...
+			if (SPI.pinIsMOSI(_mosi) && SPI.pinIsSCK(_sclk)) {
+				spi_port = &SPI;
+			} else if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsSCK(_sclk)) {
+				spi_port = &SPI1;
+			} else {
+				Serial.println("SPI Pins are not valid");
+				return; 	// we will probably crash!
+			}
+		}
 
+		// lets setup any non standard IO pins.
+		if (_mosi != 255) spi_port->setMOSI(_mosi);
+		if (_sclk != 255) spi_port->setSCK(_sclk);
+		if (_miso != 255) {
+			if (spi_port->pinIsMISO(_miso)) 
+				spi_port->setMISO(_miso);
+		}
+	}
+	uint32_t *pa = (uint32_t*)((void*)spi_port);
+	_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+	_pkinetisl_spi = (KINETISL_SPI_t *)(void*)pa[0];
 
+	pcs_data = 0;
+	pcs_command = 0;
+	pinMode(_cs, OUTPUT);
+	_csport    = portOutputRegister(digitalPinToPort(_cs));
+	_cspinmask = digitalPinToBitMask(_cs);
+	*_csport |= _cspinmask;
+	pinMode(_dc, OUTPUT);
+	_dcport    = portOutputRegister(digitalPinToPort(_dc));
+	_dcpinmask = digitalPinToBitMask(_dc);
+	*_dcport |= _dcpinmask;
+	_dcpinAsserted = 0;
+
+	spi_port->begin();
 #endif
 	// toggle RST low to reset
 	if (_rst < 255) {
@@ -3650,7 +3689,7 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 		waitTransmitComplete();
 	}
 
-#else
+#elif defined(KINETISK)
 // T3.x	
 	//void ILI9488_t3::waitFifoNotFull(void) {
 	void ILI9488_t3::waitFifoNotFull(void) {
@@ -3725,6 +3764,119 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 		_pkinetisk_spi->PUSHR = d | (pcs_data << 16) | SPI_PUSHR_CTAS(1) | SPI_PUSHR_EOQ;
 		waitTransmitComplete(mcr);
 	}
+#elif defined(KINETISL)
+	void ILI9488_t3::waitTransmitComplete(void)  {
+	    uint32_t tmp __attribute__((unused));
+
+		while (_pending_rx_count) {
+			uint16_t timeout_count = 0xff; // hopefully enough 
+			while (!(_pkinetisl_spi->S & SPI_S_SPRF) && timeout_count--) ; // wait 
+			uint8_t d __attribute__((unused));
+			d = _pkinetisl_spi->DL;
+			d = _pkinetisl_spi->DH;
+			_pending_rx_count--; // We hopefully received our data...
+		}
+	}
+	
+	void ILI9488_t3::setCommandMode() {
+		if (!_dcpinAsserted) {
+			waitTransmitComplete();
+			*_dcport  &= ~_dcpinmask;
+			_dcpinAsserted = 1;
+		}
+	}
+
+	void ILI9488_t3::setDataMode() {
+		if (_dcpinAsserted) {
+			waitTransmitComplete();
+			*_dcport  |= _dcpinmask;
+			_dcpinAsserted = 0;
+		}
+	}
+
+	void ILI9488_t3::outputToSPI(uint8_t c) {
+		if (_pkinetisl_spi->C2 & SPI_C2_SPIMODE) {
+			// Wait to change modes until any pending output has been done.
+			waitTransmitComplete();
+			_pkinetisl_spi->C2 = 0; // make sure 8 bit mode.
+		}
+		while (!(_pkinetisl_spi->S & SPI_S_SPTEF)) ; // wait if output buffer busy.
+		// Clear out buffer if there is something there...
+		if  ((_pkinetisl_spi->S & SPI_S_SPRF)) {
+			uint8_t d __attribute__((unused));
+			d = _pkinetisl_spi->DL;
+			_pending_rx_count--;
+		} 
+		_pkinetisl_spi->DL = c; // output byte
+		_pending_rx_count++; // let system know we sent something	
+	}
+
+	void ILI9488_t3::outputToSPI16(uint16_t data)  {
+		if (!(_pkinetisl_spi->C2 & SPI_C2_SPIMODE)) {
+			// Wait to change modes until any pending output has been done.
+			waitTransmitComplete();
+			_pkinetisl_spi->C2 = SPI_C2_SPIMODE; // make sure 8 bit mode.
+		}
+		uint8_t s;
+		do {
+			s = _pkinetisl_spi->S;
+			 // wait if output buffer busy.
+			// Clear out buffer if there is something there...
+			if  ((s & SPI_S_SPRF)) {
+				uint8_t d __attribute__((unused));
+				d = _pkinetisl_spi->DL;
+				d = _pkinetisl_spi->DH;
+				_pending_rx_count--; 	// let system know we sent something	
+			}
+
+		} while (!(s & SPI_S_SPTEF) || (s & SPI_S_SPRF));
+
+		_pkinetisl_spi->DL = data; 		// output low byte
+		_pkinetisl_spi->DH = data >> 8; // output high byte
+		_pending_rx_count++; 	// let system know we sent something	
+	}
+
+	void ILI9488_t3::beginSPITransaction(uint32_t clock) {
+		spi_port->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
+		if (_csport)
+			*_csport  &= ~_cspinmask;
+	}
+	void ILI9488_t3::endSPITransaction() {
+		if (_csport)
+			*_csport |= _cspinmask;
+		spi_port->endTransaction();
+	}
+
+	void ILI9488_t3::writecommand_cont(uint8_t c)  {
+		setCommandMode();
+		outputToSPI(c);
+	}
+	void ILI9488_t3::writedata8_cont(uint8_t c) {
+		setDataMode();
+		outputToSPI(c);
+	}
+
+	void ILI9488_t3::writedata16_cont(uint16_t c)  {
+		setDataMode();
+		outputToSPI16(c);
+	}
+
+	void ILI9488_t3::writecommand_last(uint8_t c)  {
+		setCommandMode();
+		outputToSPI(c);
+		waitTransmitComplete();
+	}
+	void ILI9488_t3::writedata8_last(uint8_t c)  {
+		setDataMode();
+		outputToSPI(c);
+		waitTransmitComplete();
+	}
+	void ILI9488_t3::writedata16_last(uint16_t c) {
+		setDataMode();
+		outputToSPI16(c);
+		waitTransmitComplete();
+	}
+
 #endif
 
 	void ILI9488_t3::setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)

@@ -54,9 +54,7 @@
 #include <DMAChannel.h>
 #endif
 
-#if defined(__MKL26Z64__)
-#error "Sorry, ILI9488_t3 does not work with Teensy LC.  Use Adafruit_ILI9488."
-#elif defined(__AVR__)
+#if defined(__AVR__)
 #error "Sorry, ILI9488_t3 does not work with Teensy 2.0 or Teensy++ 2.0.  Use Adafruit_ILI9488."
 #endif
 
@@ -436,7 +434,7 @@ class ILI9488_t3 : public Print
 	//inline IMXRT_LPSPI_t & port() { return (*(IMXRT_LPSPI_t *)0x403A0000); }
 	IMXRT_LPSPI_t *_pimxrt_spi;
 #elif defined(KINETISL)
- 	//KINETISL_SPI_t *_pkinetisl_spi;
+ 	KINETISL_SPI_t *_pkinetisl_spi;
 #endif
 	int16_t _width, _height; // Display w/h as modified by current rotation
 	int16_t  cursor_x, cursor_y;
@@ -483,9 +481,23 @@ class ILI9488_t3 : public Print
     uint32_t _dcpinmask;
     uint8_t _pending_rx_count;
     volatile uint32_t *_dcport;
-#else
+
+#elif defined(KINETISK)
     uint8_t _cspinmask;
     volatile uint8_t *_csport;
+
+#elif defined(KINETISL)
+    uint8_t _pending_rx_count;
+	uint8_t _dcpinAsserted;
+    volatile uint8_t  *_dcport;
+    uint8_t _dcpinmask;
+    uint8_t _cspinmask;
+    volatile uint8_t *_csport;
+
+    void setDataMode();
+    void setCommandMode();
+	void outputToSPI(uint8_t c);
+	void outputToSPI16(uint16_t data);
 #endif
 
 //#ifdef ENABLE_ILI9488_FRAMEBUFFER
@@ -548,6 +560,7 @@ class ILI9488_t3 : public Print
 	void beginSPITransaction(uint32_t clock = ILI9488_SPICLOCK);
 	void endSPITransaction();
 	void maybeUpdateTCR(uint32_t requested_tcr_state);
+// KINETISL specific helpers
 
 	void waitFifoNotFull(void);	
 	
