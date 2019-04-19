@@ -422,7 +422,6 @@ class ILI9488_t3 : public Print
 	#else
 	uint32_t frameCount() {return 0; }
 	boolean	asyncUpdateActive(void)  {return false;}
-	uint32_t frameCount() {return 0; }
 	#endif
 
 

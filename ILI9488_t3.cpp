@@ -1467,36 +1467,51 @@ void ILI9488_t3::begin(void)
 	*/
 
 	if ((_mosi != 255) || (_miso != 255) || (_sclk != 255)) {
-		if(spi_port == &SPI){
-			if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk)) {
-				//spi_port= &SPI;
-				uint32_t *pa = (uint32_t*)((void*)spi_port);
-				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-				_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
-				_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+		#if defined(__MK64FX512__) || defined(__MK66FX1M0__)
+			if(spi_port == &SPI){
+				if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk)) {
+					//spi_port= &SPI;
+					uint32_t *pa = (uint32_t*)((void*)spi_port);
+					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+					_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
+					_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+				}
+				Serial.println("ILI9488_t3n: SPI automatically selected");
+			} else if(spi_port == &SPI1){
+				if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsMISO(_miso) && SPI1.pinIsSCK(_sclk)) {
+					//spi_port= &SPI1;
+					uint32_t *pa = (uint32_t*)((void*)spi_port);
+					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+					_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
+					_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+				}
+				Serial.println("ILI9488_t3n: SPI1 automatically selected");
+			} else if(spi_port == &SPI2){
+				if (SPI2.pinIsMOSI(_mosi) && SPI2.pinIsMISO(_miso) && SPI2.pinIsSCK(_sclk)) {
+					//spi_port= &SPI2;
+					uint32_t *pa = (uint32_t*)((void*)spi_port);
+					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+					_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
+					_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+				}
+				Serial.println("ILI9488_t3n: SPI2 automatically selected");
+			} else {
+				Serial.println("SPI Port not supported");
 			}
-			Serial.println("ILI9488_t3n: SPI automatically selected");
-		} else if(spi_port == &SPI1){
-			if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsMISO(_miso) && SPI1.pinIsSCK(_sclk)) {
-				//spi_port= &SPI1;
-				uint32_t *pa = (uint32_t*)((void*)spi_port);
-				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-				_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
-				_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+		#elif defined(__MK20DX256__)
+			if(spi_port == &SPI){
+				if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk)) {
+					//spi_port= &SPI;
+					uint32_t *pa = (uint32_t*)((void*)spi_port);
+					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+					_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
+					_fifo_size = _spi_hardware->queue_size;		// remember the queue size
+				}
+				Serial.println("ILI9488_t3n: SPI automatically selected");
+			} else {
+				Serial.println("SPI Port not supported");
 			}
-			Serial.println("ILI9488_t3n: SPI1 automatically selected");
-		} else if(spi_port == &SPI2){
-			if (SPI2.pinIsMOSI(_mosi) && SPI2.pinIsMISO(_miso) && SPI2.pinIsSCK(_sclk)) {
-				//spi_port= &SPI2;
-				uint32_t *pa = (uint32_t*)((void*)spi_port);
-				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-				_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
-				_fifo_size = _spi_hardware->queue_size;		// remember the queue size
-			}
-			Serial.println("ILI9488_t3n: SPI2 automatically selected");
-		} else {
-			Serial.println("SPI Port not supported");
-		}
+		#endif
 
 		uint8_t mosi_sck_bad = false;
 		if(!(spi_port->pinIsMOSI(_mosi)))  {
@@ -3197,6 +3212,7 @@ void ILI9488_t3::process_dma_interrupt(void) {
 }
 #endif
 
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
 void	ILI9488_t3::initDMASettings(void) 
 {
 	// Serial.printf("initDMASettings called %d\n", _dma_state);
@@ -3301,6 +3317,8 @@ void	ILI9488_t3::initDMASettings(void)
 	// Serial.println("DMA initDMASettings - end");
 
 }
+#endif
+
 #ifdef DEBUG_ASYNC_UPDATE
 void dumpDMA_TCD(DMABaseClass *dmabc)
 {
