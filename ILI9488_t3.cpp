@@ -62,7 +62,7 @@
 #define	COUNT_WORDS_WRITE  ((ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)/SCREEN_DMA_NUM_SETTINGS) // Note I know the divide will give whole number
 #endif
 
-#define DEBUG_ASYNC_UPDATE
+//#define DEBUG_ASYNC_UPDATE
 #if defined(__MK66FX1M0__) 
 DMASetting 	ILI9488_t3::_dmasettings[3];
 DMAChannel 	ILI9488_t3::_dmatx;
@@ -3445,20 +3445,20 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	//==========================================
 	// T3.5
 	//==========================================
-	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
 
 	setAddr(0, 0, _width-1, _height-1);
+	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
 	writecommand_cont(ILI9488_RAMWR);
 
 	// Write the first Word out before enter DMA as to setup the proper CS/DC/Continue flaugs
 	// need to deal with first pixel... 
 	write16BitColor(_pallet[*_pfbtft]);	
+	_dmatx.sourceBuffer(&_dma_pixel_buffer0[3], sizeof(_dma_pixel_buffer0)-3);
 	_dma_frame_count = 0;  // Set frame count back to zero. 
 	_dmaActiveDisplay = this;
 	_dma_state |= ILI9488_DMA_ACTIVE;
 	_pkinetisk_spi->RSER |= SPI_RSER_TFFF_DIRS | SPI_RSER_TFFF_RE;	 // Set DMA Interrupt Request Select and Enable register
 	_pkinetisk_spi->MCR &= ~SPI_MCR_HALT;  //Start transfers.
-	_dmatx.sourceBuffer(&_dma_pixel_buffer0[3], sizeof(_dma_pixel_buffer0)-3);
   	//_dmatx.begin(false);
 	_dmatx.enable();
 #endif	
