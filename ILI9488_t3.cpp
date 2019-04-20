@@ -287,6 +287,7 @@ void ILI9488_t3::write16BitColor(uint16_t color, bool last_pixel){
   //     };
   //     spi_port->dmaSend(buff, 3);
   // #else
+#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
   uint8_t r = (color & 0xF800) >> 11;
   uint8_t g = (color & 0x07E0) >> 5;
   uint8_t b = color & 0x001F;
@@ -294,7 +295,6 @@ void ILI9488_t3::write16BitColor(uint16_t color, bool last_pixel){
   r = (r * 255) / 31;
   g = (g * 255) / 63;
   b = (b * 255) / 31;
-#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
   uint32_t color24 = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
   if (last_pixel)  {
 	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23));
@@ -308,16 +308,124 @@ void ILI9488_t3::write16BitColor(uint16_t color, bool last_pixel){
 	waitFifoNotFull();
   }
 
-#else
+#elif defined(KINETISK)
+  uint8_t r = (color & 0xF800) >> 11;
+  r = (r * 255) / 31;
   writedata8_cont(r);
+
+  uint8_t g = (color & 0x07E0) >> 5;
+  g = (g * 255) / 63;
   writedata8_cont(g);
+
+  uint8_t b = color & 0x001F;
+  b = (b * 255) / 31;
   if (last_pixel)  {
   	writedata8_last(b);
   } else {
   	writedata8_cont(b);
   }
+#elif defined(KINETISL)
+  uint8_t r = (color & 0xF800) >> 11;
+
+  r = (r * 255) / 31;
+  setDataMode();
+  outputToSPI(r);
+  uint8_t g = (color & 0x07E0) >> 5;
+  g = (g * 255) / 63;
+  outputToSPIAlready8Bits(g);
+  uint8_t b = color & 0x001F;
+  b = (b * 255) / 31;
+  outputToSPIAlready8Bits(b);
+  if (last_pixel) {
+	waitTransmitComplete();
+  } 
+
 #endif
   // #endif
+}
+
+
+void ILI9488_t3::write16BitColor(uint16_t color, uint16_t count, bool last_pixel){
+#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+  uint8_t r = (color & 0xF800) >> 11;
+  uint8_t g = (color & 0x07E0) >> 5;
+  uint8_t b = color & 0x001F;
+
+  r = (r * 255) / 31;
+  g = (g * 255) / 63;
+  b = (b * 255) / 31;
+  uint32_t color24 = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+  while (count > 1) {
+	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
+	_pimxrt_spi->TDR = color24;
+	_pending_rx_count++;	//
+	waitFifoNotFull();
+	count--;  	
+  }
+
+  if (last_pixel)  {
+	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23));
+	_pimxrt_spi->TDR = color24;
+	_pending_rx_count++;	//
+	waitTransmitComplete();
+  } else {
+	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
+	_pimxrt_spi->TDR = color24;
+	_pending_rx_count++;	//
+	waitFifoNotFull();
+  }
+
+#elif defined(KINETISK)
+  if (count < 2) {
+  	write16BitColor(color, last_pixel);
+  	return;
+  }
+  uint8_t r = (color & 0xF800) >> 11;
+  r = (r * 255) / 31;
+  writedata8_cont(r);
+
+  uint8_t g = (color & 0x07E0) >> 5;
+  g = (g * 255) / 63;
+  writedata8_cont(g);
+
+  uint8_t b = color & 0x001F;
+  b = (b * 255) / 31;
+
+  writedata8_cont(b);
+ 
+  while (--count) {
+	  writedata8_cont(r);
+	  writedata8_cont(g);
+
+	  if ((count == 1) && last_pixel)  {
+	  	writedata8_last(b);
+	  } else {
+	  	writedata8_cont(b);
+	  }
+  }
+#elif defined(KINETISL)
+  uint8_t r = (color & 0xF800) >> 11;
+
+  r = (r * 255) / 31;
+  setDataMode();
+  outputToSPI(r);
+  uint8_t g = (color & 0x07E0) >> 5;
+  g = (g * 255) / 63;
+  outputToSPIAlready8Bits(g);
+  uint8_t b = color & 0x001F;
+  b = (b * 255) / 31;
+  outputToSPIAlready8Bits(b);
+  while (--count) {
+	  outputToSPIAlready8Bits(r);
+	  outputToSPIAlready8Bits(g);
+	  outputToSPIAlready8Bits(b);
+  }
+
+  if (last_pixel) {
+		waitTransmitComplete();
+  } 
+
+#endif
 }
 
 
@@ -374,10 +482,7 @@ void ILI9488_t3::drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
 		beginSPITransaction();
 		setAddr(x, y, x, y+h-1);
 		writecommand_cont(ILI9488_RAMWR);
-		while (h-- > 1) {
-			write16BitColor(color);
-		}
-		write16BitColor(color,true);
+		write16BitColor(color,h, true);
 		endSPITransaction();
 	}
 }
@@ -406,10 +511,7 @@ void ILI9488_t3::drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
 		beginSPITransaction();
 		setAddr(x, y, x+w-1, y);
 		writecommand_cont(ILI9488_RAMWR);
-		while (w-- > 1) {
-			write16BitColor(color);
-		}
-		write16BitColor(color, true);
+		write16BitColor(color, w, true);
 		endSPITransaction();
 	}
 }
@@ -470,10 +572,7 @@ void ILI9488_t3::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
 		setAddr(x, y, x+w-1, y+h-1);
 		writecommand_cont(ILI9488_RAMWR);
 		for(y=h; y>0; y--) {
-			for(x=w; x>1; x--) {
-				write16BitColor(color);
-			}
-			write16BitColor(color,true);
+			write16BitColor(color, w, true);
 #if 0
 			if (y > 1 && (y & 1)) {
 				endSPITransaction();
@@ -3582,303 +3681,6 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 
 
 
-//----------------------------------------------------------------------
-// Processor Specific stuff
-
-#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
-// T4
-	void ILI9488_t3::DIRECT_WRITE_LOW(volatile uint32_t * base, uint32_t mask) {
-		*(base+34) = mask;
-	}
-	void ILI9488_t3::DIRECT_WRITE_HIGH(volatile uint32_t * base, uint32_t mask) {
-		*(base+33) = mask;
-	}
-	void ILI9488_t3::waitFifoNotFull(void) {
-    	uint32_t tmp __attribute__((unused));
-    	do {
-        	if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0)  {
-            	tmp = _pimxrt_spi->RDR;  // Read any pending RX bytes in
-            	if (_pending_rx_count) _pending_rx_count--; //decrement count of bytes still levt
-        	}
-    	} while ((_pimxrt_spi->SR & LPSPI_SR_TDF) == 0) ;
-	}
-	void ILI9488_t3::waitTransmitComplete(void)  {
-	    uint32_t tmp __attribute__((unused));
-	//    digitalWriteFast(2, HIGH);
-
-	    while (_pending_rx_count) {
-	        if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0)  {
-	            tmp = _pimxrt_spi->RDR;  // Read any pending RX bytes in
-	            _pending_rx_count--; //decrement count of bytes still levt
-	        }
-	    }
-	    _pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF;       // Clear RX FIFO
-	//    digitalWriteFast(2, LOW);
-	}
-
-
-	#define TCR_MASK  (LPSPI_TCR_PCS(3) | LPSPI_TCR_FRAMESZ(31) | LPSPI_TCR_CONT | LPSPI_TCR_RXMSK )
-	void ILI9488_t3::maybeUpdateTCR(uint32_t requested_tcr_state) /*__attribute__((always_inline)) */ {
-		if ((_spi_tcr_current & TCR_MASK) != requested_tcr_state) {
-			bool dc_state_change = (_spi_tcr_current & LPSPI_TCR_PCS(3)) != (requested_tcr_state & LPSPI_TCR_PCS(3));
-			_spi_tcr_current = (_spi_tcr_current & ~TCR_MASK) | requested_tcr_state ;
-			// only output when Transfer queue is empty.
-			if (!dc_state_change || !_dcpinmask) {
-				while ((_pimxrt_spi->FSR & 0x1f) )	;
-				_pimxrt_spi->TCR = _spi_tcr_current;	// update the TCR
-
-			} else {
-				waitTransmitComplete();
-				if (requested_tcr_state & LPSPI_TCR_PCS(3)) DIRECT_WRITE_HIGH(_dcport, _dcpinmask);
-				else DIRECT_WRITE_LOW(_dcport, _dcpinmask);
-				_pimxrt_spi->TCR = _spi_tcr_current & ~(LPSPI_TCR_PCS(3) | LPSPI_TCR_CONT);	// go ahead and update TCR anyway?  
-
-			}
-		}
-	}
-
-	void ILI9488_t3::beginSPITransaction(uint32_t clock) {
-		spi_port->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
-		if (_csport)
-			DIRECT_WRITE_LOW(_csport, _cspinmask);
-	}
-	void ILI9488_t3::endSPITransaction() {
-		if (_csport)
-			DIRECT_WRITE_HIGH(_csport, _cspinmask);
-		spi_port->endTransaction();
-	}
-
-	// BUGBUG:: currently assumming we only have CS_0 as valid CS
-	void ILI9488_t3::writecommand_cont(uint8_t c) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7) /*| LPSPI_TCR_CONT*/);
-		_pimxrt_spi->TDR = c;
-		_pending_rx_count++;	//
-		waitFifoNotFull();
-	}
-	void ILI9488_t3::writedata8_cont(uint8_t c) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
-		_pimxrt_spi->TDR = c;
-		_pending_rx_count++;	//
-		waitFifoNotFull();
-	}
-	void ILI9488_t3::writedata16_cont(uint16_t d) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
-		_pimxrt_spi->TDR = d;
-		_pending_rx_count++;	//
-		waitFifoNotFull();
-	}
-	void ILI9488_t3::writecommand_last(uint8_t c) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));
-		_pimxrt_spi->TDR = c;
-//		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
-		_pending_rx_count++;	//
-		waitTransmitComplete();
-	}
-	void ILI9488_t3::writedata8_last(uint8_t c) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7));
-		_pimxrt_spi->TDR = c;
-//		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
-		_pending_rx_count++;	//
-		waitTransmitComplete();
-	}
-	void ILI9488_t3::writedata16_last(uint16_t d) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15));
-		_pimxrt_spi->TDR = d;
-//		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
-		_pending_rx_count++;	//
-		waitTransmitComplete();
-	}
-
-#elif defined(KINETISK)
-// T3.x	
-	//void ILI9488_t3::waitFifoNotFull(void) {
-	void ILI9488_t3::waitFifoNotFull(void) {
-		uint32_t sr;
-		uint32_t tmp __attribute__((unused));
-		do {
-			sr = _pkinetisk_spi->SR;
-			if (sr & 0xF0) tmp = _pkinetisk_spi->POPR;  // drain RX FIFO
-		} while ((uint16_t)(sr & (15 << 12)) > ((uint16_t)(_fifo_size-1) << 12));
-	}
-	void ILI9488_t3::waitFifoEmpty(void) {
-		uint32_t sr;
-		uint32_t tmp __attribute__((unused));
-		do {
-			sr = _pkinetisk_spi->SR;
-			if (sr & 0xF0) tmp = _pkinetisk_spi->POPR;  // drain RX FIFO
-		} while ((sr & 0xF0F0) > 0);             // wait both RX & TX empty
-	}
-	void ILI9488_t3::waitTransmitComplete(void) {
-		uint32_t tmp __attribute__((unused));
-		while (!(_pkinetisk_spi->SR & SPI_SR_TCF)) ; // wait until final output done
-		tmp = _pkinetisk_spi->POPR;                  // drain the final RX FIFO word
-	}
-	void ILI9488_t3::waitTransmitComplete(uint32_t mcr) {
-		uint32_t tmp __attribute__((unused));
-		while (1) {
-			uint32_t sr = _pkinetisk_spi->SR;
-			if (sr & SPI_SR_EOQF) break;  // wait for last transmit
-			if (sr &  0xF0) tmp = _pkinetisk_spi->POPR;
-		}
-		_pkinetisk_spi->SR = SPI_SR_EOQF;
-		_pkinetisk_spi->MCR = mcr;
-		while (_pkinetisk_spi->SR & 0xF0) {
-			tmp = _pkinetisk_spi->POPR;
-		}
-	}
-	void ILI9488_t3::ILI9488_t3::beginSPITransaction(uint32_t clock) {
-		spi_port->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
-		if (_csport)
-			*_csport  &= ~_cspinmask;
-	}
-	void ILI9488_t3::endSPITransaction() {
-		if (_csport)
-			*_csport |= _cspinmask;
-		spi_port->endTransaction();
-	}
-
-	void ILI9488_t3::writecommand_cont(uint8_t c) {
-		_pkinetisk_spi->PUSHR = c | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
-		waitFifoNotFull();
-	}
-	void ILI9488_t3::writedata8_cont(uint8_t c) {
-		_pkinetisk_spi->PUSHR = c | (pcs_data << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
-		waitFifoNotFull();
-	}
-	void ILI9488_t3::writedata16_cont(uint16_t d) {
-		_pkinetisk_spi->PUSHR = d | (pcs_data << 16) | SPI_PUSHR_CTAS(1) | SPI_PUSHR_CONT;
-		waitFifoNotFull();
-	}
-	void ILI9488_t3::writecommand_last(uint8_t c) {
-		uint32_t mcr = _pkinetisk_spi->MCR;
-		_pkinetisk_spi->PUSHR = c | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_EOQ;
-		waitTransmitComplete(mcr);
-	}
-	void ILI9488_t3::writedata8_last(uint8_t c) {
-		uint32_t mcr = _pkinetisk_spi->MCR;
-		_pkinetisk_spi->PUSHR = c | (pcs_data << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_EOQ;
-		waitTransmitComplete(mcr);
-	}
-	void ILI9488_t3::writedata16_last(uint16_t d) {
-		uint32_t mcr = _pkinetisk_spi->MCR;
-		_pkinetisk_spi->PUSHR = d | (pcs_data << 16) | SPI_PUSHR_CTAS(1) | SPI_PUSHR_EOQ;
-		waitTransmitComplete(mcr);
-	}
-#elif defined(KINETISL)
-	void ILI9488_t3::waitTransmitComplete(void)  {
-	    uint32_t tmp __attribute__((unused));
-
-		while (_pending_rx_count) {
-			uint16_t timeout_count = 0xff; // hopefully enough 
-			while (!(_pkinetisl_spi->S & SPI_S_SPRF) && timeout_count--) ; // wait 
-			uint8_t d __attribute__((unused));
-			d = _pkinetisl_spi->DL;
-			d = _pkinetisl_spi->DH;
-			_pending_rx_count--; // We hopefully received our data...
-		}
-	}
-	
-	void ILI9488_t3::setCommandMode() {
-		if (!_dcpinAsserted) {
-			waitTransmitComplete();
-			*_dcport  &= ~_dcpinmask;
-			_dcpinAsserted = 1;
-		}
-	}
-
-	void ILI9488_t3::setDataMode() {
-		if (_dcpinAsserted) {
-			waitTransmitComplete();
-			*_dcport  |= _dcpinmask;
-			_dcpinAsserted = 0;
-		}
-	}
-
-	void ILI9488_t3::outputToSPI(uint8_t c) {
-		if (_pkinetisl_spi->C2 & SPI_C2_SPIMODE) {
-			// Wait to change modes until any pending output has been done.
-			waitTransmitComplete();
-			_pkinetisl_spi->C2 = 0; // make sure 8 bit mode.
-		}
-		while (!(_pkinetisl_spi->S & SPI_S_SPTEF)) ; // wait if output buffer busy.
-		// Clear out buffer if there is something there...
-		if  ((_pkinetisl_spi->S & SPI_S_SPRF)) {
-			uint8_t d __attribute__((unused));
-			d = _pkinetisl_spi->DL;
-			_pending_rx_count--;
-		} 
-		_pkinetisl_spi->DL = c; // output byte
-		_pending_rx_count++; // let system know we sent something	
-	}
-
-	void ILI9488_t3::outputToSPI16(uint16_t data)  {
-		if (!(_pkinetisl_spi->C2 & SPI_C2_SPIMODE)) {
-			// Wait to change modes until any pending output has been done.
-			waitTransmitComplete();
-			_pkinetisl_spi->C2 = SPI_C2_SPIMODE; // make sure 8 bit mode.
-		}
-		uint8_t s;
-		do {
-			s = _pkinetisl_spi->S;
-			 // wait if output buffer busy.
-			// Clear out buffer if there is something there...
-			if  ((s & SPI_S_SPRF)) {
-				uint8_t d __attribute__((unused));
-				d = _pkinetisl_spi->DL;
-				d = _pkinetisl_spi->DH;
-				_pending_rx_count--; 	// let system know we sent something	
-			}
-
-		} while (!(s & SPI_S_SPTEF) || (s & SPI_S_SPRF));
-
-		_pkinetisl_spi->DL = data; 		// output low byte
-		_pkinetisl_spi->DH = data >> 8; // output high byte
-		_pending_rx_count++; 	// let system know we sent something	
-	}
-
-	void ILI9488_t3::beginSPITransaction(uint32_t clock) {
-		spi_port->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
-		if (_csport)
-			*_csport  &= ~_cspinmask;
-	}
-	void ILI9488_t3::endSPITransaction() {
-		if (_csport)
-			*_csport |= _cspinmask;
-		spi_port->endTransaction();
-	}
-
-	void ILI9488_t3::writecommand_cont(uint8_t c)  {
-		setCommandMode();
-		outputToSPI(c);
-	}
-	void ILI9488_t3::writedata8_cont(uint8_t c) {
-		setDataMode();
-		outputToSPI(c);
-	}
-
-	void ILI9488_t3::writedata16_cont(uint16_t c)  {
-		setDataMode();
-		outputToSPI16(c);
-	}
-
-	void ILI9488_t3::writecommand_last(uint8_t c)  {
-		setCommandMode();
-		outputToSPI(c);
-		waitTransmitComplete();
-	}
-	void ILI9488_t3::writedata8_last(uint8_t c)  {
-		setDataMode();
-		outputToSPI(c);
-		waitTransmitComplete();
-	}
-	void ILI9488_t3::writedata16_last(uint16_t c) {
-		setDataMode();
-		outputToSPI16(c);
-		waitTransmitComplete();
-	}
-
-#endif
-
 	void ILI9488_t3::setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 	 {
 		writecommand_cont(ILI9488_CASET); // Column addr set
@@ -3909,7 +3711,7 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 
 		setAddr(x, y, x+w-1, y);
 		writecommand_cont(ILI9488_RAMWR);
-		do { write16BitColor(color); } while (--w > 0);
+		write16BitColor(color, w, false);
 	}
 	
 	void ILI9488_t3::VLine(int16_t x, int16_t y, int16_t h, uint16_t color)
@@ -3931,7 +3733,7 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 
 		setAddr(x, y, x, y+h-1);
 		writecommand_cont(ILI9488_RAMWR);
-		do { write16BitColor(color); } while (--h > 0);
+		write16BitColor(color, h, false);
 	}
 	
 	void ILI9488_t3::Pixel(int16_t x, int16_t y, uint16_t color)
