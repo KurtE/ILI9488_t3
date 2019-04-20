@@ -340,6 +340,7 @@ class ILI9488_t3 : public Print
 	void drawFontChar(unsigned int c);
 	int16_t strPixelLen(char * str);
 	void write16BitColor(uint16_t color, bool last_pixel=false);
+	void write16BitColor(uint16_t color, uint16_t count, bool last_pixel);
 	
 	// setOrigin sets an offset in display pixels where drawing to (0,0) will appear
 	// for example: setOrigin(10,10); drawPixel(5,5); will cause a pixel to be drawn at hardware pixel (15,15)
@@ -494,10 +495,6 @@ class ILI9488_t3 : public Print
     uint8_t _cspinmask;
     volatile uint8_t *_csport;
 
-    void setDataMode();
-    void setCommandMode();
-	void outputToSPI(uint8_t c);
-	void outputToSPI16(uint16_t data);
 #endif
 
 //#ifdef ENABLE_ILI9488_FRAMEBUFFER
@@ -548,25 +545,303 @@ class ILI9488_t3 : public Print
 
 //----------------------------------------------------------------------
 // Processor Specific stuff
+#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+// T4
+	void DIRECT_WRITE_LOW(volatile uint32_t * base, uint32_t mask)  __attribute__((always_inline)) {
+		*(base+34) = mask;
+	}
+	void DIRECT_WRITE_HIGH(volatile uint32_t * base, uint32_t mask)  __attribute__((always_inline)) {
+		*(base+33) = mask;
+	}
+	void waitFifoNotFull(void) {
+    	uint32_t tmp __attribute__((unused));
+    	do {
+        	if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0)  {
+            	tmp = _pimxrt_spi->RDR;  // Read any pending RX bytes in
+            	if (_pending_rx_count) _pending_rx_count--; //decrement count of bytes still levt
+        	}
+    	} while ((_pimxrt_spi->SR & LPSPI_SR_TDF) == 0) ;
+	}
+	void waitTransmitComplete(void)  {
+	    uint32_t tmp __attribute__((unused));
+	//    digitalWriteFast(2, HIGH);
 
-	void DIRECT_WRITE_LOW(volatile uint32_t * base, uint32_t mask);
-	void DIRECT_WRITE_HIGH(volatile uint32_t * base, uint32_t mask);
-	void writecommand_cont(uint8_t c);
-	void writedata8_cont(uint8_t c); 
-	void writedata16_cont(uint16_t d);
-	void writecommand_last(uint8_t c);
-	void writedata8_last(uint8_t c);
-	void writedata16_last(uint16_t d);
-	void beginSPITransaction(uint32_t clock = ILI9488_SPICLOCK);
-	void endSPITransaction();
-	void maybeUpdateTCR(uint32_t requested_tcr_state);
-// KINETISL specific helpers
+	    while (_pending_rx_count) {
+	        if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0)  {
+	            tmp = _pimxrt_spi->RDR;  // Read any pending RX bytes in
+	            _pending_rx_count--; //decrement count of bytes still levt
+	        }
+	    }
+	    _pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF;       // Clear RX FIFO
+	//    digitalWriteFast(2, LOW);
+	}
 
-	void waitFifoNotFull(void);	
+
+	#define TCR_MASK  (LPSPI_TCR_PCS(3) | LPSPI_TCR_FRAMESZ(31) | LPSPI_TCR_CONT | LPSPI_TCR_RXMSK )
+	void maybeUpdateTCR(uint32_t requested_tcr_state) /*__attribute__((always_inline)) */ {
+		if ((_spi_tcr_current & TCR_MASK) != requested_tcr_state) {
+			bool dc_state_change = (_spi_tcr_current & LPSPI_TCR_PCS(3)) != (requested_tcr_state & LPSPI_TCR_PCS(3));
+			_spi_tcr_current = (_spi_tcr_current & ~TCR_MASK) | requested_tcr_state ;
+			// only output when Transfer queue is empty.
+			if (!dc_state_change || !_dcpinmask) {
+				while ((_pimxrt_spi->FSR & 0x1f) )	;
+				_pimxrt_spi->TCR = _spi_tcr_current;	// update the TCR
+
+			} else {
+				waitTransmitComplete();
+				if (requested_tcr_state & LPSPI_TCR_PCS(3)) DIRECT_WRITE_HIGH(_dcport, _dcpinmask);
+				else DIRECT_WRITE_LOW(_dcport, _dcpinmask);
+				_pimxrt_spi->TCR = _spi_tcr_current & ~(LPSPI_TCR_PCS(3) | LPSPI_TCR_CONT);	// go ahead and update TCR anyway?  
+
+			}
+		}
+	}
+
+	void beginSPITransaction(uint32_t clock = ILI9488_SPICLOCK)  __attribute__((always_inline)) {
+		spi_port->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
+		if (_csport)
+			DIRECT_WRITE_LOW(_csport, _cspinmask);
+	}
+	void endSPITransaction()  __attribute__((always_inline)) {
+		if (_csport)
+			DIRECT_WRITE_HIGH(_csport, _cspinmask);
+		spi_port->endTransaction();
+	}
+
+	// BUGBUG:: currently assumming we only have CS_0 as valid CS
+	void writecommand_cont(uint8_t c) __attribute__((always_inline)) {
+		maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7) /*| LPSPI_TCR_CONT*/);
+		_pimxrt_spi->TDR = c;
+		_pending_rx_count++;	//
+		waitFifoNotFull();
+	}
+	void writedata8_cont(uint8_t c) __attribute__((always_inline)) {
+		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
+		_pimxrt_spi->TDR = c;
+		_pending_rx_count++;	//
+		waitFifoNotFull();
+	}
+	void writedata16_cont(uint16_t d) __attribute__((always_inline)) {
+		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
+		_pimxrt_spi->TDR = d;
+		_pending_rx_count++;	//
+		waitFifoNotFull();
+	}
+	void writecommand_last(uint8_t c) __attribute__((always_inline)) {
+		maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));
+		_pimxrt_spi->TDR = c;
+//		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
+		_pending_rx_count++;	//
+		waitTransmitComplete();
+	}
+	void writedata8_last(uint8_t c) __attribute__((always_inline)) {
+		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7));
+		_pimxrt_spi->TDR = c;
+//		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
+		_pending_rx_count++;	//
+		waitTransmitComplete();
+	}
+	void writedata16_last(uint16_t d) __attribute__((always_inline)) {
+		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15));
+		_pimxrt_spi->TDR = d;
+//		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
+		_pending_rx_count++;	//
+		waitTransmitComplete();
+	}
+#elif defined(KINETISK)
+// T3.x	
+	void waitFifoNotFull(void) {
+		uint32_t sr;
+		uint32_t tmp __attribute__((unused));
+		do {
+			sr = _pkinetisk_spi->SR;
+			if (sr & 0xF0) tmp = _pkinetisk_spi->POPR;  // drain RX FIFO
+		} while ((uint16_t)(sr & (15 << 12)) > ((uint16_t)(_fifo_size-1) << 12));
+	}
+	void waitFifoEmpty(void) {
+		uint32_t sr;
+		uint32_t tmp __attribute__((unused));
+		do {
+			sr = _pkinetisk_spi->SR;
+			if (sr & 0xF0) tmp = _pkinetisk_spi->POPR;  // drain RX FIFO
+		} while ((sr & 0xF0F0) > 0);             // wait both RX & TX empty
+	}
+	void waitTransmitComplete(void) {
+		uint32_t tmp __attribute__((unused));
+		while (!(_pkinetisk_spi->SR & SPI_SR_TCF)) ; // wait until final output done
+		tmp = _pkinetisk_spi->POPR;                  // drain the final RX FIFO word
+	}
+	void waitTransmitComplete(uint32_t mcr) {
+		uint32_t tmp __attribute__((unused));
+		while (1) {
+			uint32_t sr = _pkinetisk_spi->SR;
+			if (sr & SPI_SR_EOQF) break;  // wait for last transmit
+			if (sr &  0xF0) tmp = _pkinetisk_spi->POPR;
+		}
+		_pkinetisk_spi->SR = SPI_SR_EOQF;
+		_pkinetisk_spi->MCR = mcr;
+		while (_pkinetisk_spi->SR & 0xF0) {
+			tmp = _pkinetisk_spi->POPR;
+		}
+	}
+	void beginSPITransaction(uint32_t clock = ILI9488_SPICLOCK)  __attribute__((always_inline)) {
+		spi_port->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
+		if (_csport)
+			*_csport  &= ~_cspinmask;
+	}
+	void endSPITransaction()  __attribute__((always_inline)) {
+		if (_csport)
+			*_csport |= _cspinmask;
+		spi_port->endTransaction();
+	}
+
+	void writecommand_cont(uint8_t c)  __attribute__((always_inline)) {
+		_pkinetisk_spi->PUSHR = c | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
+		waitFifoNotFull();
+	}
+	void writedata8_cont(uint8_t c)  __attribute__((always_inline)) {
+		_pkinetisk_spi->PUSHR = c | (pcs_data << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_CONT;
+		waitFifoNotFull();
+	}
+	void writedata16_cont(uint16_t d)  __attribute__((always_inline)) {
+		_pkinetisk_spi->PUSHR = d | (pcs_data << 16) | SPI_PUSHR_CTAS(1) | SPI_PUSHR_CONT;
+		waitFifoNotFull();
+	}
+	void writecommand_last(uint8_t c)  __attribute__((always_inline)) {
+		uint32_t mcr = _pkinetisk_spi->MCR;
+		_pkinetisk_spi->PUSHR = c | (pcs_command << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_EOQ;
+		waitTransmitComplete(mcr);
+	}
+	void writedata8_last(uint8_t c)  __attribute__((always_inline)) {
+		uint32_t mcr = _pkinetisk_spi->MCR;
+		_pkinetisk_spi->PUSHR = c | (pcs_data << 16) | SPI_PUSHR_CTAS(0) | SPI_PUSHR_EOQ;
+		waitTransmitComplete(mcr);
+	}
+	void writedata16_last(uint16_t d)  __attribute__((always_inline)) {
+		uint32_t mcr = _pkinetisk_spi->MCR;
+		_pkinetisk_spi->PUSHR = d | (pcs_data << 16) | SPI_PUSHR_CTAS(1) | SPI_PUSHR_EOQ;
+		waitTransmitComplete(mcr);
+	}
+#elif defined(KINETISL)
+	void waitTransmitComplete(void)  {
+	    uint32_t tmp __attribute__((unused));
+
+		while (_pending_rx_count) {
+			uint16_t timeout_count = 0xff; // hopefully enough 
+			while (!(_pkinetisl_spi->S & SPI_S_SPRF) && timeout_count--) ; // wait 
+			uint8_t d __attribute__((unused));
+			d = _pkinetisl_spi->DL;
+			d = _pkinetisl_spi->DH;
+			_pending_rx_count--; // We hopefully received our data...
+		}
+	}
 	
-	void waitFifoEmpty(void);
-	void waitTransmitComplete(void);
-	void waitTransmitComplete(uint32_t mcr);
+
+	void setCommandMode()  __attribute__((always_inline)) {
+		if (!_dcpinAsserted) {
+			waitTransmitComplete();
+			*_dcport  &= ~_dcpinmask;
+			_dcpinAsserted = 1;
+		}
+	}
+
+	void setDataMode()  __attribute__((always_inline)){
+		if (_dcpinAsserted) {
+			waitTransmitComplete();
+			*_dcport  |= _dcpinmask;
+			_dcpinAsserted = 0;
+		}
+	}
+	void outputToSPIAlready8Bits(uint8_t c) __attribute__((always_inline)){
+		while (!(_pkinetisl_spi->S & SPI_S_SPTEF)) ; // wait if output buffer busy.
+		// Clear out buffer if there is something there...
+		if  ((_pkinetisl_spi->S & SPI_S_SPRF)) {
+			uint8_t d __attribute__((unused));
+			d = _pkinetisl_spi->DL;
+			_pending_rx_count--;
+		} 
+		_pkinetisl_spi->DL = c; // output byte
+		_pending_rx_count++; // let system know we sent something	
+	}
+
+	void outputToSPI(uint8_t c) __attribute__((always_inline)){
+		if (_pkinetisl_spi->C2 & SPI_C2_SPIMODE) {
+			// Wait to change modes until any pending output has been done.
+			waitTransmitComplete();
+			_pkinetisl_spi->C2 = 0; // make sure 8 bit mode.
+		}
+		outputToSPIAlready8Bits(c);
+	}
+
+	void outputToSPI16(uint16_t data)  {
+		if (!(_pkinetisl_spi->C2 & SPI_C2_SPIMODE)) {
+			// Wait to change modes until any pending output has been done.
+			waitTransmitComplete();
+			_pkinetisl_spi->C2 = SPI_C2_SPIMODE; // make sure 8 bit mode.
+		}
+		uint8_t s;
+		do {
+			s = _pkinetisl_spi->S;
+			 // wait if output buffer busy.
+			// Clear out buffer if there is something there...
+			if  ((s & SPI_S_SPRF)) {
+				uint8_t d __attribute__((unused));
+				d = _pkinetisl_spi->DL;
+				d = _pkinetisl_spi->DH;
+				_pending_rx_count--; 	// let system know we sent something	
+			}
+
+		} while (!(s & SPI_S_SPTEF) || (s & SPI_S_SPRF));
+
+		_pkinetisl_spi->DL = data; 		// output low byte
+		_pkinetisl_spi->DH = data >> 8; // output high byte
+		_pending_rx_count++; 	// let system know we sent something	
+	}
+
+	void beginSPITransaction(uint32_t clock = ILI9488_SPICLOCK) __attribute__((always_inline)) {
+		spi_port->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
+		if (_csport)
+			*_csport  &= ~_cspinmask;
+	}
+	void endSPITransaction() __attribute__((always_inline)) {
+		if (_csport)
+			*_csport |= _cspinmask;
+		spi_port->endTransaction();
+	}
+
+	void writecommand_cont(uint8_t c) __attribute__((always_inline))  {
+		setCommandMode();
+		outputToSPI(c);
+	}
+	void writedata8_cont(uint8_t c) __attribute__((always_inline)) {
+		setDataMode();
+		outputToSPI(c);
+	}
+
+	void writedata16_cont(uint16_t c) __attribute__((always_inline))  {
+		setDataMode();
+		outputToSPI16(c);
+	}
+
+	void writecommand_last(uint8_t c) __attribute__((always_inline))  {
+		setCommandMode();
+		outputToSPI(c);
+		waitTransmitComplete();
+	}
+	void writedata8_last(uint8_t c) __attribute__((always_inline))  {
+		setDataMode();
+		outputToSPI(c);
+		waitTransmitComplete();
+	}
+	void writedata16_last(uint16_t c) __attribute__((always_inline)) {
+		setDataMode();
+		outputToSPI16(c);
+		waitTransmitComplete();
+	}
+
+#endif
+
+	// Other helper functions.
 	
 	void setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 	void HLine(int16_t x, int16_t y, int16_t w, uint16_t color);
