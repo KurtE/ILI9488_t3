@@ -32,7 +32,7 @@ Adafruit_STMPE610 ts = Adafruit_STMPE610(STMPE_CS);
 // The display also uses hardware SPI, plus #9 & #10
 #define TFT_CS 10
 #define TFT_DC  9
-ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC);
+ILI9488_t3 tft = ILI9488_t3(&SPI, TFT_CS, TFT_DC);
 
 // Size of the color selection boxes and the paintbrush size
 #define BOXSIZE 40

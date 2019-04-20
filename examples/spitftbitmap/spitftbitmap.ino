@@ -25,7 +25,7 @@
 
 #define TFT_DC  9
 #define TFT_CS 10
-ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC);
+ILI9488_t3 tft = ILI9488_t3(&SPI, TFT_CS, TFT_DC);
 
 #define SD_CS 4
 

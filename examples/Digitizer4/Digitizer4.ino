@@ -31,7 +31,7 @@
 #define TFT_RST 255
 #define TFT_DC 20
 #define TFT_CS 21
-ILI9488_t3n tft = ILI9488_t3n(TFT_CS, TFT_DC, TFT_RST);
+ILI9488_t3n tft = ILI9488_t3n(&SPI, TFT_CS, TFT_DC, TFT_RST);
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
 // On Teensy 4 beta with Paul's breakout out:
 // Using pins (MOSI, MISO, SCK which are labeled on Audio board breakout location
@@ -40,7 +40,7 @@ ILI9488_t3n tft = ILI9488_t3n(TFT_CS, TFT_DC, TFT_RST);
 #define TFT_RST 23
 #define TFT_DC 9
 #define TFT_CS 10
-ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC, TFT_RST);
+ILI9488_t3 tft = ILI9488_t3(&SPI, TFT_CS, TFT_DC, TFT_RST);
 #elif defined(TEENSY64)
 #define TFT_RST 255
 #define TFT_DC 20
@@ -48,7 +48,7 @@ ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC, TFT_RST);
 #define TFT_SCK 14
 #define TFT_MISO 39
 #define TFT_MOSI 28
-ILI9488_t3n tft = ILI9488_t3n(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO);
+ILI9488_t3n tft = ILI9488_t3(&SPI, TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO);
 #else
 #error "This example App will only work with Teensy 3.6 or Teensy 4."
 #endif

@@ -57,7 +57,7 @@ const uint8_t TFT_DC = 9;
 const uint8_t TFT_CS = 10;
 
 // Use hardware SPI (#13, #12, #11) and the above for CS/DC
-ILI9488_t3 tft = ILI9488_t3(TFT_CS, TFT_DC,23);
+ILI9488_t3 tft = ILI9488_t3(&SPI, TFT_CS, TFT_DC,23);
 FrameParams frameParams;
 long previousMillis = 0;
 
