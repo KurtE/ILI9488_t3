@@ -94,10 +94,10 @@
 #define ILI9488_DISPOFF 0x28
 #define ILI9488_DISPON  0x29
 
-#define ILI9488_CASET   0x2A
-#define ILI9488_PASET   0x2B
-#define ILI9488_RAMWR   0x2C
-#define ILI9488_RAMRD   0x2E
+#define ILI9488_CASET   0x2A   //Column Address Set 
+#define ILI9488_PASET   0x2B   //Page Address Set 
+#define ILI9488_RAMWR   0x2C   //Memory Write 
+#define ILI9488_RAMRD   0x2E   //Memory Read
 
 #define ILI9488_PTLAR    0x30
 #define ILI9488_MADCTL   0x36
@@ -125,6 +125,13 @@
 
 #define ILI9488_GMCTRP1 0xE0
 #define ILI9488_GMCTRN1 0xE1
+
+// define aliases for commonly used commands. 
+#define SET_COLUMN_ADDRESS_WINDOW  0x2A
+#define SET_ROW_ADDRESS_WINDOW     0x2B
+#define BEGIN_PIXEL_DATA           0x2C
+#define BEGIN_READ_DATA            0x2E
+#define READ_MEMORY_CONTINUE       0x3E
 /*
 #define ILI9488_PWCTR6  0xFC
 
@@ -423,6 +430,20 @@ class ILI9488_t3 : public Print
 	boolean	asyncUpdateActive(void)  {return false;}
 	#endif
 
+	//3D Rendering Engine
+	// State variables for controlling masked and overdrawn rendering
+	uint8_t  mask_flag = 0;
+	uint8_t  do_masking = 0;  
+	uint8_t  do_overdraw = 0;  
+	uint16_t background_color = 0;
+	uint16_t foreground_color = ILI9488_WHITE;
+	  
+	// Functions for controlling masked and overdrawn rendering
+	void     overdraw_on();
+	void     overdraw_off();
+	void     masking_on();
+	void     masking_off();
+	void     flip_mask();
 
  protected:
     SPIClass                *spi_port;

@@ -1659,19 +1659,41 @@ void ILI9488_t3::begin(void)
 		}
 	}
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x 
-	if(spi_port == &SPI){
-		if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk)) {
-			//spi_port= &SPI;
-			uint32_t *pa = (uint32_t*)((void*)spi_port);
-			_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-			_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
+		if(spi_port == &SPI){
+			if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk)) {
+				//spi_port= &SPI;
+				uint32_t *pa = (uint32_t*)((void*)spi_port);
+				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+				_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
+			}
+			Serial.println("ILI9488_t3n: (T4) SPI automatically selected");
+		} else {
+			Serial.println("T4: SPI Port not supported");
+			return;
 		}
-		Serial.println("ILI9488_t3n: (T4) SPI automatically selected");
-	} else {
-		Serial.println("T4: SPI Port not supported");
-		return;
-	}
-
+	#if defined(__IMXRT1062__)
+		if(spi_port == &SPI1){
+			if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsMISO(_miso) && SPI1.pinIsSCK(_sclk)) {
+				//spi_port= &SPI;
+				uint32_t *pa = (uint32_t*)((void*)spi_port);
+				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+				_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
+			}
+			Serial.println("ILI9488_t3n: (T4) SPI automatically selected");
+		} else if(spi_port == &SPI2){
+			if (SPI2.pinIsMOSI(_mosi) && SPI2.pinIsMISO(_miso) && SPI2.pinIsSCK(_sclk)) {
+				//spi_port= &SPI;
+				uint32_t *pa = (uint32_t*)((void*)spi_port);
+				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+				_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
+			}
+			Serial.println("ILI9488_t3n: (T4) SPI automatically selected");
+		} else {
+			Serial.println("T4: SPI Port not supported");
+			return;
+		}
+	#endif
+	
 		uint8_t mosi_sck_bad = false;
 		if(!(spi_port->pinIsMOSI(_mosi)))  {
 			Serial.print(" MOSI");
@@ -3155,6 +3177,18 @@ void ILI9488_t3::resetScrollBackgroundColor(uint16_t color){
 	scrollbgcolor=color;
 }	
 
+////////////////////////////////////////////////////////////////////////////
+// ROUTINES FOR MASKING AND OVERDRAW - 3D rendering
+////////////////////////////////////////////////////////////////////////////
+
+// Functions for controlling masked and overdrawn rendering
+void     ILI9488_t3::overdraw_on()  {do_overdraw = 1;}
+void     ILI9488_t3::overdraw_off() {do_overdraw = 0;}
+void     ILI9488_t3::masking_on()   {do_masking  = 1;}
+void     ILI9488_t3::masking_off()  {do_masking  = 0;}
+//void     ILI9488_t3::flip_mask()    {mask_flag  ^= FRAME_ID_FLAG8;}
+
+
 
 
 void Adafruit_GFX_Button::initButton(ILI9488_t3 *gfx,
@@ -3753,3 +3787,5 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 		writecommand_cont(ILI9488_RAMWR);
 		write16BitColor(color);
 	}
+
+	
