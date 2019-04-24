@@ -1667,46 +1667,43 @@ void ILI9488_t3::begin(void)
 				_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
 			}
 			Serial.println("ILI9488_t3n: (T4) SPI automatically selected");
-		} else {
-			Serial.println("T4: SPI Port not supported");
-			return;
 		}
-	#if defined(__IMXRT1062__)
-		if(spi_port == &SPI1){
-			if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsMISO(_miso) && SPI1.pinIsSCK(_sclk)) {
-				//spi_port= &SPI;
-				uint32_t *pa = (uint32_t*)((void*)spi_port);
-				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-				_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
+		#if defined(__IMXRT1062__)
+			if(spi_port == &SPI1){
+				if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsMISO(_miso) && SPI1.pinIsSCK(_sclk)) {
+					//spi_port= &SPI;
+					uint32_t *pa = (uint32_t*)((void*)spi_port);
+					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+					_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
+				}
+				Serial.println("ILI9488_t3n: (T4) SPI1 automatically selected");
+			} else if(spi_port == &SPI2){
+				if (SPI2.pinIsMOSI(_mosi) && SPI2.pinIsMISO(_miso) && SPI2.pinIsSCK(_sclk)) {
+					//spi_port= &SPI;
+					uint32_t *pa = (uint32_t*)((void*)spi_port);
+					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+					_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
+				}
+				Serial.println("ILI9488_t3n: (T4) SPI2 automatically selected");
+			} else if(spi_port != &SPI){
+				Serial.println("T4: SPI1/2 Port not supported");
+				return;
 			}
-			Serial.println("ILI9488_t3n: (T4) SPI automatically selected");
-		} else if(spi_port == &SPI2){
-			if (SPI2.pinIsMOSI(_mosi) && SPI2.pinIsMISO(_miso) && SPI2.pinIsSCK(_sclk)) {
-				//spi_port= &SPI;
-				uint32_t *pa = (uint32_t*)((void*)spi_port);
-				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-				_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
-			}
-			Serial.println("ILI9488_t3n: (T4) SPI automatically selected");
-		} else {
-			Serial.println("T4: SPI Port not supported");
-			return;
-		}
-	#endif
+		#endif
 	
 		uint8_t mosi_sck_bad = false;
 		if(!(spi_port->pinIsMOSI(_mosi)))  {
-			Serial.print(" MOSI");
+			Serial.print(" MOSI  "); Serial.println(_mosi);
 			mosi_sck_bad = true;
 		}
 		if (!spi_port->pinIsSCK(_sclk)) {
-			Serial.print(" SCLK");
+			Serial.print(" SCLK  "); Serial.println(_sclk);
 			mosi_sck_bad = true;
 		}
 
 		// Maybe allow us to limp with only MISO bad
 		if(!(spi_port->pinIsMISO(_miso))) {
-			Serial.print(" MISO");
+			Serial.print(" MISO  "); Serial.println(_miso);
 			_miso = 0xff;	// set miso to 255 as flag it is bad
 		}
 		Serial.println();
