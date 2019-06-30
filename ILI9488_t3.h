@@ -398,24 +398,33 @@ class ILI9488_t3 : public Print
 	
 	// added support to use optional Frame buffer
 	void	setFrameBuffer(uint8_t *frame_buffer);
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	uint8_t *getFrameBuffer() {return _pfbtft;}
+	uint16_t *getPallet() {return _pallet; }
+	void	colorsArePalletIndex(boolean b) {_colors_are_index = b;}
+	boolean	colorsArePalletIndex() {return _colors_are_index;}
+	inline uint8_t mapColorToPalletIndex(uint16_t color) 
+		{
+			if (_pallet && _colors_are_index) return (uint8_t)color;
+			return doActualConvertColorToIndex(color);		
+		}
+#else
+	uint8_t *getFrameBuffer() {return nullptr;}
+	uint16_t *getPallet() {return nullptr; }
+	void	colorsArePalletIndex(boolean b) {;}
+	boolean	colorsArePalletIndex() {return true;}
+	inline uint16_t mapColorToPalletIndex(uint16_t color) { return color; }
+#endif	
 	uint8_t useFrameBuffer(boolean b);		// use the frame buffer?  First call will allocate
 	void	freeFrameBuffer(void);			// explicit call to release the buffer
 	void	updateScreen(void);				// call to say update the screen now. 
 
 	// Support for user to set Pallet. 
 	void	setPallet(uint16_t *pal, uint16_t count);	// <= 256
-	void	colorsArePalletIndex(boolean b) {_colors_are_index = b;}
-	boolean	colorsArePalletIndex() {return _colors_are_index;}
 	
 	// probably not called directly... 
 	uint8_t doActualConvertColorToIndex(uint16_t color);  
 
-	inline uint8_t mapColorToPalletIndex(uint16_t color) 
-		{
-			if (_pallet && _colors_are_index) return (uint8_t)color;
-			return doActualConvertColorToIndex(color);		
-		}
 		
 	bool	updateScreenAsync(bool update_cont = false);	// call to say update the screen optinoally turn into continuous mode. 
 	void	waitUpdateAsyncComplete(void);
@@ -434,7 +443,7 @@ class ILI9488_t3 : public Print
 	// State variables for controlling masked and overdrawn rendering
 	uint8_t  mask_flag = 0;
 	uint8_t  do_masking = 0;  
-	uint8_t  do_overdraw = 0;  
+	uint8_t  do_overdraw = 0;
 	uint16_t background_color = 0;
 	uint16_t foreground_color = ILI9488_WHITE;
 	  
@@ -518,7 +527,8 @@ class ILI9488_t3 : public Print
 
 #endif
 
-//#ifdef ENABLE_ILI9488_FRAMEBUFFER
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	enum {DMA_PIXELS_OUTPUT_PER_DMA=80};  // How many pixels at a time?
     // Add support for optional frame buffer
     uint8_t		*_pfbtft;						// Optional Frame buffer 
     uint8_t		_use_fbtft;						// Are we in frame buffer mode?
@@ -533,35 +543,42 @@ class ILI9488_t3 : public Print
 	static  ILI9488_t3 		*_dmaActiveDisplay;  // Use pointer to this as a way to get back to object...
 	static volatile uint8_t  	_dma_state;  		// DMA status
 	static volatile uint32_t	_dma_frame_count;	// Can return a frame count...
+
+	// T3.6
 	#if defined(__MK66FX1M0__) 
 	static DMASetting 	_dmasettings[3];
 	static DMAChannel  	_dmatx;
+
+	bool fillDMApixelBuffer(uint8_t *buffer_ptr);
+
+	uint8_t _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+	uint8_t _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+
 	#elif defined(__MK64FX512__)
 	// T3.5 - had issues scatter/gather so do just use channels/interrupts
 	// and update and continue
 	static DMAChannel  	_dmatx;
-//	static DMAChannel  	_dmarx;
-//	static uint16_t 	_dma_count_remaining;
-//	static uint16_t		_dma_write_size_words;
+	bool fillDMApixelBuffer(uint8_t *buffer_ptr);
+
+	uint8_t _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+	uint8_t _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+
 	#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
 	// Going to try it similar to T4.
 	static DMASetting 	_dmasettings[2];
 	static DMAChannel  	_dmatx;
 	uint32_t 			_spi_fcr_save;		// save away previous FCR register value
-	#else
+	bool fillDMApixelBuffer(uint32_t *buffer_ptr);
+
+	uint32_t _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA] __attribute__ ((aligned(4)));
+	uint32_t _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA] __attribute__ ((aligned(4)));
+
 	#endif	
 	static void dmaInterrupt(void);
 	void process_dma_interrupt(void);
-	bool fillDMApixelBuffer(uint8_t *buffer_ptr);
-
-	enum {DMA_PIXELS_OUTPUT_PER_DMA=80};  // How many pixels at a time?
-	uint8_t _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
-	uint8_t _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
 	static volatile uint32_t _dma_pixel_index;
 	static volatile uint16_t	_dma_sub_frame_count;	// Can return a frame count...
-
-
-//#endif
+#endif
 
 
 //----------------------------------------------------------------------
