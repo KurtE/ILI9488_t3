@@ -86,13 +86,14 @@ DMAChannel 	ILI9488_t3::_dmatx;
 #else
 #endif	
 
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
 ILI9488_t3 *ILI9488_t3::_dmaActiveDisplay = 0;
 volatile uint8_t  	ILI9488_t3::_dma_state = 0;  // Use pointer to this as a way to get back to object...
 volatile uint32_t	ILI9488_t3::_dma_frame_count = 0;	// Can return a frame count...
 volatile uint32_t 	ILI9488_t3::_dma_pixel_index = 0;
 volatile uint16_t	ILI9488_t3::_dma_sub_frame_count = 0;	// Can return a frame count...
 
-
+#endif
 
 // Constructor when using hardware SPI.  Faster, but must use SPI pins
 // specific to each board type (e.g. 11,13 for Uno, 51,52 for Mega, etc.)
@@ -119,12 +120,14 @@ ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, u
     _cspinmask = 0;
     _csport = NULL;
 	
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	_use_fbtft = false;
 	_pfbtft = nullptr;
 	_pallet = NULL ;	// 
 	// Probably should check that it did not fail... 
 	_pallet_size = 0;					// How big is the pallet
 	_pallet_count = 0;					// how many items are in it...
+#endif
 
  	uint32_t *pa = (uint32_t*)((void*)spi_port);
 	_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
@@ -144,13 +147,16 @@ ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, u
 	
 	// Support for user to set Pallet. 
 void ILI9488_t3::setPallet(uint16_t *pal, uint16_t count) {
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_pallet && _pallet_size) free(_pallet);
 
 	_pallet = pal;
 	_pallet_count = count;
 	_pallet_size = 0;	// assume we can not set this internally 
+#endif
 }
 
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
 uint8_t ILI9488_t3::doActualConvertColorToIndex(uint16_t color) {
 	if (_pallet == nullptr) {
 		// Need to allocate it... 
@@ -170,6 +176,7 @@ uint8_t ILI9488_t3::doActualConvertColorToIndex(uint16_t color) {
 	return _pallet_count++;
 }
 	
+#endif
 
 
 void ILI9488_t3::setFrameBuffer(uint8_t *frame_buffer) 
@@ -3237,12 +3244,13 @@ bool Adafruit_GFX_Button::contains(int16_t x, int16_t y)
 //=============================================================================
 // DMA - Async support
 //=============================================================================
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
 void ILI9488_t3::dmaInterrupt(void) {
 	if (_dmaActiveDisplay)  {
 		_dmaActiveDisplay->process_dma_interrupt();
 	}
 }
-
+#endif
 
 #ifdef DEBUG_ASYNC_UPDATE
 extern void dumpDMA_TCD(DMABaseClass *dmabc);
@@ -3397,13 +3405,13 @@ void	ILI9488_t3::initDMASettings(void)
 	// Serial.printf("  CWW: %d %d %d\n", CBALLOC, SCREEN_DMA_NUM_SETTINGS, COUNT_WORDS_WRITE);
 	_dmasettings[0].sourceBuffer(_dma_pixel_buffer0, sizeof(_dma_pixel_buffer0));
 	_dmasettings[0].destination(_pimxrt_spi->TDR);
-	_dmasettings[0].TCD->ATTR_DST = 0;
+//	_dmasettings[0].TCD->ATTR_DST = 0;		// This should be 2 (32 bit)
 	_dmasettings[0].replaceSettingsOnCompletion(_dmasettings[1]);
 	_dmasettings[0].interruptAtCompletion();
 
 	_dmasettings[1].sourceBuffer(_dma_pixel_buffer1, sizeof(_dma_pixel_buffer1));
 	_dmasettings[1].destination(_pimxrt_spi->TDR);
-	_dmasettings[1].TCD->ATTR_DST = 0;
+//	_dmasettings[1].TCD->ATTR_DST = 0;
 	_dmasettings[1].replaceSettingsOnCompletion(_dmasettings[0]);
 	_dmasettings[1].interruptAtCompletion();
 
@@ -3521,6 +3529,35 @@ void ILI9488_t3::dumpDMASettings() {
 }
 
 // Fill the pixel buffer with data... 
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
+#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+bool ILI9488_t3::fillDMApixelBuffer(uint32_t *dma_buffer_pointer)
+{
+	uint8_t *frame_buffer_pixel_ptr = &_pfbtft[_dma_pixel_index];
+
+	for (uint16_t i = 0; i < DMA_PIXELS_OUTPUT_PER_DMA; i++) {
+		uint16_t color = _pallet[*frame_buffer_pixel_ptr++]; 	// extract the 16 bit color
+		uint32_t r = (color & 0xF800) >> 11;
+		uint32_t g = (color & 0x07E0) >> 5;
+		uint32_t b = color & 0x001F;
+
+		r = (r * 255) / 31;
+		g = (g * 255) / 63;
+		b = (b * 255) / 31;
+	
+		*dma_buffer_pointer++ = (r << 16) | (g << 8) | b;
+	}
+	_dma_pixel_index += DMA_PIXELS_OUTPUT_PER_DMA;
+	if (_dma_pixel_index >= (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)) {
+		_dma_pixel_index = 0;
+		return true;
+	}
+
+	return false;
+}
+
+#else
+// T3.x - Don't have 24/32 bit SPI transfers so output byte at a time...
 bool ILI9488_t3::fillDMApixelBuffer(uint8_t *dma_buffer_pointer)
 {
 	uint8_t *frame_buffer_pixel_ptr = &_pfbtft[_dma_pixel_index];
@@ -3547,6 +3584,8 @@ bool ILI9488_t3::fillDMApixelBuffer(uint8_t *dma_buffer_pointer)
 
 	return false;
 }
+#endif
+#endif
 
 bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update the screen now.
 {
@@ -3605,7 +3644,7 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	// Update TCR to 16 bit mode. and output the first entry.
 	_spi_fcr_save = _pimxrt_spi->FCR;	// remember the FCR
 	_pimxrt_spi->FCR = 0;	// clear water marks... 	
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_RXMSK /*| LPSPI_TCR_CONT*/);
+	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_RXMSK /*| LPSPI_TCR_CONT*/);
 //	_pimxrt_spi->CFGR1 |= LPSPI_CFGR1_NOSTALL;
 //	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
  	_pimxrt_spi->DER = LPSPI_DER_TDDE;
