@@ -881,14 +881,14 @@ class ILI9488_t3 : public Print
 
 // To avoid conflict when also using Adafruit_GFX or any Adafruit library
 // which depends on Adafruit_GFX, #include the Adafruit library *BEFORE*
-// you #include ST7735_t3.h.
+// you #include ILI9488_t3.h.
 // Warning the implemention of class needs to be here, else the code
 // compiled in the c++ file will cause duplicate defines in the link phase. 
 #ifndef _ADAFRUIT_GFX_H
 class Adafruit_GFX_Button {
 public:
 	Adafruit_GFX_Button(void) { _gfx = NULL; }
-	void initButton(ST7735_t3 *gfx, int16_t x, int16_t y,
+	void initButton(ILI9488_t3 *gfx, int16_t x, int16_t y,
 		uint8_t w, uint8_t h,
 		uint16_t outline, uint16_t fill, uint16_t textcolor,
 		const char *label, uint8_t textsize) {
