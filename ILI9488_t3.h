@@ -53,6 +53,7 @@
 #include "Arduino.h"
 #include <DMAChannel.h>
 #endif
+#include <stdint.h>
 
 #if defined(__AVR__)
 #error "Sorry, ILI9488_t3 does not work with Teensy 2.0 or Teensy++ 2.0.  Use Adafruit_ILI9488."
@@ -186,6 +187,31 @@ typedef struct {
 	unsigned char cap_height;
 } ILI9488_t3_font_t;
 
+// Lets see about supporting Adafruit fonts as well?
+#ifndef _GFXFONT_H_
+#define _GFXFONT_H_
+
+/// Font data stored PER GLYPH
+typedef struct {
+	uint16_t bitmapOffset;     ///< Pointer into GFXfont->bitmap
+	uint8_t  width;            ///< Bitmap dimensions in pixels
+    uint8_t  height;           ///< Bitmap dimensions in pixels
+	uint8_t  xAdvance;         ///< Distance to advance cursor (x axis)
+	int8_t   xOffset;          ///< X dist from cursor pos to UL corner
+    int8_t   yOffset;          ///< Y dist from cursor pos to UL corner
+} GFXglyph;
+
+/// Data stored for FONT AS A WHOLE
+typedef struct { 
+	uint8_t  *bitmap;      ///< Glyph bitmaps, concatenated
+	GFXglyph *glyph;       ///< Glyph array
+	uint8_t   first;       ///< ASCII extents (first char)
+    uint8_t   last;        ///< ASCII extents (last char)
+	uint8_t   yAdvance;    ///< Newline distance (y axis)
+} GFXfont;
+
+#endif // _GFXFONT_H_
+
 #define ILI9488_DMA_INIT	0x01 	// We have init the Dma settings
 #define ILI9488_DMA_CONT	0x02 	// continuous mode
 #define ILI9488_DMA_ACTIVE  0x80    // Is currently active
@@ -210,7 +236,7 @@ typedef struct {
 #ifdef __cplusplus
 // At all other speeds, ILI9241_KINETISK__pspi->beginTransaction() will use the fastest available clock
 #include <SPI.h>
-#include <SPI.h>
+
 #if defined(__MK64FX512__) || defined(__MK66FX1M0__)
 #if F_BUS >= 64000000
 #define ILI9488_SPICLOCK 64000000
@@ -325,30 +351,22 @@ class ILI9488_t3 : public Print
 	void drawRoundRect(int16_t x0, int16_t y0, int16_t w, int16_t h, int16_t radius, uint16_t color);
 	void fillRoundRect(int16_t x0, int16_t y0, int16_t w, int16_t h, int16_t radius, uint16_t color);
 	void drawBitmap(int16_t x, int16_t y, const uint8_t *bitmap, int16_t w, int16_t h, uint16_t color);
-	void drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg, uint8_t size);
+	void drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg, uint8_t size_x, uint8_t size_y);
+	void inline drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg, uint8_t size) 
+	    { drawChar(x, y, c, color, bg, size);}
+
 	void setCursor(int16_t x, int16_t y);
     void getCursor(int16_t *x, int16_t *y);
 	void setTextColor(uint16_t c);
 	void setTextColor(uint16_t c, uint16_t bg);
-	void setTextSize(uint8_t s);
+    void setTextSize(uint8_t sx, uint8_t sy);
+	void inline setTextSize(uint8_t s) { setTextSize(s,s); }
+	uint8_t getTextSizeX();
+	uint8_t getTextSizeY();
 	uint8_t getTextSize();
 	void setTextWrap(boolean w);
 	boolean getTextWrap();
-	virtual size_t write(uint8_t);
-	int16_t width(void)  { return _width; }
-	int16_t height(void) { return _height; }
-	uint8_t getRotation(void);
-	void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color);
-	void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
-	int16_t getCursorX(void) const { return cursor_x; }
-	int16_t getCursorY(void) const { return cursor_y; }
-	void setFont(const ILI9488_t3_font_t &f) { font = &f; }
-	void setFontAdafruit(void) { font = NULL; }
-	void drawFontChar(unsigned int c);
-	int16_t strPixelLen(char * str);
-	void write16BitColor(uint16_t color, bool last_pixel=false);
-	void write16BitColor(uint16_t color, uint16_t count, bool last_pixel);
-	
+
 	// setOrigin sets an offset in display pixels where drawing to (0,0) will appear
 	// for example: setOrigin(10,10); drawPixel(5,5); will cause a pixel to be drawn at hardware pixel (15,15)
 	void setOrigin(int16_t x = 0, int16_t y = 0) { 
@@ -371,7 +389,32 @@ class ILI9488_t3 : public Print
 			//if (Serial) Serial.printf("clear clip Rect\n");
 			 updateDisplayClip(); 
 		}
+
+	virtual size_t write(uint8_t);
+	int16_t width(void)  { return _width; }
+	int16_t height(void) { return _height; }
+	uint8_t getRotation(void);
+	void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color);
+	void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
+	int16_t getCursorX(void) const { return cursor_x; }
+	int16_t getCursorY(void) const { return cursor_y; }
+	void setFont(const ILI9488_t3_font_t &f);
+    void setFont(const GFXfont *f = NULL);
+	void setFontAdafruit(void) { setFont(); }
+	void drawFontChar(unsigned int c);
+	void drawGFXFontChar(unsigned int c);
+
+    void getTextBounds(const char *string, int16_t x, int16_t y,
+      int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
+    void getTextBounds(const String &str, int16_t x, int16_t y,
+      int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
+	int16_t strPixelLen(const char * str);
 	
+	void drawFontPixel( uint8_t alpha, uint32_t x, uint32_t y );
+
+	void write16BitColor(uint16_t color, bool last_pixel=false);
+	void write16BitColor(uint16_t color, uint16_t count, bool last_pixel);
+
 	
 	// added support for drawing strings/numbers/floats with centering
 	// modified from tft_ili9488_ESP github library
@@ -478,13 +521,26 @@ class ILI9488_t3 : public Print
 	}
 	
 	uint16_t textcolor, textbgcolor, scrollbgcolor;
-	uint8_t textsize, rotation,textdatum;
+	uint8_t textsize, textsize_x, textsize_y, rotation,textdatum;
+	uint32_t textcolorPrexpanded, textbgcolorPrexpanded;
 	boolean wrap; // If set, 'wrap' text at right edge of display
 	const ILI9488_t3_font_t *font;
 
+	// Anti-aliased font support
+	uint8_t fontbpp = 1;
+	uint8_t fontbppindex = 0;
+	uint8_t fontbppmask = 1;
+	uint8_t fontppb = 8;
+	uint8_t* fontalphalut;
+	float fontalphamx = 1;	
+	
 	uint32_t padX;
 	int16_t scroll_x, scroll_y, scroll_width, scroll_height;
 	boolean scrollEnable,isWritingScrollArea; // If set, 'wrap' text at right edge of display
+
+	// GFX Font support
+	const GFXfont *gfxFont = nullptr;
+	int8_t _gfxFont_min_yOffset = 0;
 
   	uint8_t  _rst;
   	uint8_t _cs, _dc;
@@ -566,7 +622,19 @@ class ILI9488_t3 : public Print
 	static volatile uint16_t	_dma_sub_frame_count;	// Can return a frame count...
 #endif
 
+  void charBounds(char c, int16_t *x, int16_t *y,
+      			int16_t *minx, int16_t *miny, int16_t *maxx, int16_t *maxy);
 
+	void setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+	  __attribute__((always_inline)) {
+		writecommand_cont(ILI9488_CASET); // Column addr set
+		writedata16_cont(x0);   // XSTART
+		writedata16_cont(x1);   // XEND
+		writecommand_cont(ILI9488_PASET); // Row addr set
+		writedata16_cont(y0);   // YSTART
+		writedata16_cont(y1);   // YEND
+	}
+	
 //----------------------------------------------------------------------
 // Processor Specific stuff
 #if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
@@ -866,8 +934,6 @@ class ILI9488_t3 : public Print
 #endif
 
 	// Other helper functions.
-	
-	void setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 	void HLine(int16_t x, int16_t y, int16_t w, uint16_t color);
 	void VLine(int16_t x, int16_t y, int16_t h, uint16_t color);
 	void Pixel(int16_t x, int16_t y, uint16_t color);
@@ -892,7 +958,7 @@ public:
 	void initButton(ILI9488_t3 *gfx, int16_t x, int16_t y,
 		uint8_t w, uint8_t h,
 		uint16_t outline, uint16_t fill, uint16_t textcolor,
-		const char *label, uint8_t textsize) {
+		const char *label, uint8_t textsize_x, uint8_t textsize_y) {
 		_x = x;
 		_y = y;
 		_w = w;
@@ -900,7 +966,8 @@ public:
 		_outlinecolor = outline;
 		_fillcolor = fill;
 		_textcolor = textcolor;
-		_textsize = textsize;
+		_textsize_x = textsize_x;
+		_textsize_y = textsize_y;
 		_gfx = gfx;
 		strncpy(_label, label, 9);
 		_label[9] = 0;
@@ -920,9 +987,10 @@ public:
 		}
 		_gfx->fillRoundRect(_x - (_w/2), _y - (_h/2), _w, _h, min(_w,_h)/4, fill);
 		_gfx->drawRoundRect(_x - (_w/2), _y - (_h/2), _w, _h, min(_w,_h)/4, outline);
-		_gfx->setCursor(_x - strlen(_label)*3*_textsize, _y-4*_textsize);
+		_gfx->setCursor(_x - strlen(_label)*3*_textsize_x, _y-4*_textsize_y);
 		_gfx->setTextColor(text);
-		_gfx->setTextSize(_textsize);
+		_gfx->setTextSize(_textsize_x, _textsize_y);
+		_gfx->print(_label);
 	}
 
 	bool contains(int16_t x, int16_t y) {
@@ -942,7 +1010,7 @@ private:
 	ILI9488_t3 *_gfx;
 	int16_t _x, _y;
 	uint16_t _w, _h;
-	uint8_t _textsize;
+	uint8_t _textsize_x, _textsize_y;
 	uint16_t _outlinecolor, _fillcolor, _textcolor;
 	char _label[10];
 	boolean currstate, laststate;
