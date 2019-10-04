@@ -892,7 +892,7 @@ public:
 	void initButton(ILI9488_t3 *gfx, int16_t x, int16_t y,
 		uint8_t w, uint8_t h,
 		uint16_t outline, uint16_t fill, uint16_t textcolor,
-		const char *label, uint8_t textsize_x, uint8_t textsize_y) {
+		const char *label, uint8_t textsize) {
 		_x = x;
 		_y = y;
 		_w = w;
@@ -900,8 +900,7 @@ public:
 		_outlinecolor = outline;
 		_fillcolor = fill;
 		_textcolor = textcolor;
-		_textsize_x = textsize_x;
-		_textsize_y = textsize_y;
+		_textsize = textsize;
 		_gfx = gfx;
 		strncpy(_label, label, 9);
 		_label[9] = 0;
@@ -921,10 +920,9 @@ public:
 		}
 		_gfx->fillRoundRect(_x - (_w/2), _y - (_h/2), _w, _h, min(_w,_h)/4, fill);
 		_gfx->drawRoundRect(_x - (_w/2), _y - (_h/2), _w, _h, min(_w,_h)/4, outline);
-		_gfx->setCursor(_x - strlen(_label)*3*_textsize_x, _y-4*_textsize_y);
+		_gfx->setCursor(_x - strlen(_label)*3*_textsize, _y-4*_textsize);
 		_gfx->setTextColor(text);
-		_gfx->setTextSize(_textsize_x, _textsize_y);
-		_gfx->print(_label);
+		_gfx->setTextSize(_textsize);
 	}
 
 	bool contains(int16_t x, int16_t y) {
@@ -944,7 +942,7 @@ private:
 	ILI9488_t3 *_gfx;
 	int16_t _x, _y;
 	uint16_t _w, _h;
-	uint8_t _textsize_x, _textsize_y;
+	uint8_t _textsize;
 	uint16_t _outlinecolor, _fillcolor, _textcolor;
 	char _label[10];
 	boolean currstate, laststate;
