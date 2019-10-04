@@ -3687,11 +3687,6 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 	#endif	
 }
 
-
-
-
-
-
 	void ILI9488_t3::setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 	 {
 		writecommand_cont(ILI9488_CASET); // Column addr set
