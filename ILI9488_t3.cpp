@@ -2378,22 +2378,26 @@ void ILI9488_t3::drawChar(int16_t x, int16_t y, unsigned char c,
 
 		#ifdef ENABLE_ILI9488_FRAMEBUFFER
 		if (_use_fbtft) {
-
 			uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+			// lets try to output the values directly...
+			uint8_t * pfbPixel;
+			uint8_t bgcolor_index = mapColorToPalletIndex(bgcolor);
+			uint8_t fgcolor_index = mapColorToPalletIndex(fgcolor);
+			uint8_t color_idx;
 			for (yc=0; (yc < 8) && (y < _displayclipy2); yc++) {
 				for (yr=0; (yr < size_y) && (y < _displayclipy2); yr++) {
 					x = x_char_start; 		// get our first x position...
 					if (y >= _displayclipy1) {
-						uint8_t * pfbPixel = pfbPixel_row;
+						pfbPixel = pfbPixel_row;
 						for (xc=0; xc < 5; xc++) {
 							if (glcdfont[c * 5 + xc] & mask) {
-								color = fgcolor;
+								color_idx = fgcolor_index;
 							} else {
-								color = bgcolor;
+								color_idx = bgcolor_index;
 							}
 							for (xr=0; xr < size_x; xr++) {
 								if ((x >= _displayclipx1) && (x < _displayclipx2)) {
-									*pfbPixel = color;
+								*pfbPixel = color_idx;
 								}
 								pfbPixel++;
 								x++;
@@ -2401,7 +2405,7 @@ void ILI9488_t3::drawChar(int16_t x, int16_t y, unsigned char c,
 						}
 						for (xr=0; xr < size_x; xr++) {
 							if ((x >= _displayclipx1) && (x < _displayclipx2)) {
-								*pfbPixel = bgcolor;
+								*pfbPixel = fgcolor_index;
 							}
 							pfbPixel++;
 							x++;
@@ -2443,14 +2447,14 @@ void ILI9488_t3::drawChar(int16_t x, int16_t y, unsigned char c,
 							}
 							for (xr=0; xr < size_x; xr++) {
 								if ((x >= _displayclipx1) && (x < _displayclipx2)) {
-									writedata16_cont(color);
+									write16BitColor(color);
 								}
 								x++;
 							}
 						}
 						for (xr=0; xr < size_x; xr++) {
 							if ((x >= _displayclipx1) && (x < _displayclipx2)) {
-								writedata16_cont(bgcolor);
+								write16BitColor(bgcolor);
 							}
 							x++;
 						}
@@ -3350,10 +3354,10 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 				            if(!(bit++ & 7)) {
 				                bits = bitmap[bo++];
 				            }
-				            uint8_t color = (bits & 0x80)? textcolor_index : textbgcolor_index;
+				            uint8_t color_idx = (bits & 0x80)? textcolor_index : textbgcolor_index;
 				            for (uint8_t xts = 0; xts < textsize_x; xts++) {
 								if ( (x >= _displayclipx1) && (x < _displayclipx2)) {
-				            		*pfbPixel = color;
+				            		*pfbPixel = color_idx;
 				            	}
 								pfbPixel++;
 				            	x++;	// remember our logical position...
