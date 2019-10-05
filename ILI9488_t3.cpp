@@ -3303,19 +3303,21 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 		if (y_end > _displayclipy2) y_end = _displayclipy2;
 		if (x_end > _displayclipx2) x_end = _displayclipx2;
 
-
 		#ifdef ENABLE_ILI9488_FRAMEBUFFER
 		if (_use_fbtft) {
-			// lets try to output the values directly...
 			uint8_t * pfbPixel_row = &_pfbtft[ y_start *_width + x_start];
+			// lets try to output the values directly...
 			uint8_t * pfbPixel;
+			uint8_t textbgcolor_index = mapColorToPalletIndex(textbgcolor);
+			uint8_t textcolor_index = mapColorToPalletIndex(textcolor);
+			
 			// First lets fill in the top parts above the actual rectangle...
 			while (y_top_fill--) {
 				pfbPixel = pfbPixel_row;
 				if ( (y >= _displayclipy1) && (y < _displayclipy2)) {
 					for (int16_t xx = x_start; xx < x_end; xx++) {
 						if (xx >= _displayclipx1) {
-							*pfbPixel = textbgcolor;
+							*pfbPixel = textbgcolor_index;;
 						}
 						pfbPixel++;
 					}					
@@ -3338,7 +3340,7 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 					if (y >= _displayclipy1) {
 						while (x < x_left_fill) {
 							if ( (x >= _displayclipx1) && (x < _displayclipx2)) {
-								*pfbPixel = textbgcolor;
+								*pfbPixel = textbgcolor_index;;
 							}
 							pfbPixel++;
 							x++;
@@ -3348,7 +3350,7 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 				            if(!(bit++ & 7)) {
 				                bits = bitmap[bo++];
 				            }
-				            uint16_t color = (bits & 0x80)? textcolor : textbgcolor;
+				            uint8_t color = (bits & 0x80)? textcolor_index : textbgcolor_index;
 				            for (uint8_t xts = 0; xts < textsize_x; xts++) {
 								if ( (x >= _displayclipx1) && (x < _displayclipx2)) {
 				            		*pfbPixel = color;
@@ -3361,7 +3363,7 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 				        // Fill in any additional bg colors to right of our output
 				        while (x++ < x_end) {
 							if (x >= _displayclipx1) {
-				        		*pfbPixel = textbgcolor;
+				        		*pfbPixel = textbgcolor_index;;
 				        	}
 							pfbPixel++;
 				        }
@@ -3376,7 +3378,7 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 					pfbPixel = pfbPixel_row;
 					for (int16_t xx = x_start; xx < x_end; xx++) {
 						if (xx >= _displayclipx1) {
-			        		*pfbPixel = textbgcolor;
+			        		*pfbPixel = textbgcolor_index;;
 			        	}
 						pfbPixel++;
 					}					
@@ -3406,7 +3408,7 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 				if ( (y >= _displayclipy1) && (y < _displayclipy2)) {
 					for (int16_t xx = x_start; xx < x_end; xx++) {
 						if (xx >= _displayclipx1) {
-							writedata16_cont(textbgcolor);
+							write16BitColor(textbgcolor);
 						}
 					}					
 				}
@@ -3427,7 +3429,7 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 					if (y >= _displayclipy1) {
 						while (x < x_left_fill) {
 							if ( (x >= _displayclipx1) && (x < _displayclipx2)) {
-								writedata16_cont(textbgcolor);
+								write16BitColor(textbgcolor);
 							}
 							x++;
 						}
@@ -3438,7 +3440,7 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 				            uint16_t color = (bits & 0x80)? textcolor : textbgcolor;
 				            for (uint8_t xts = 0; xts < textsize_x; xts++) {
 								if ( (x >= _displayclipx1) && (x < _displayclipx2)) {
-									writedata16_cont(color);
+									write16BitColor(color);
 								}
 				            	x++;	// remember our logical position...
 				            }
@@ -3447,7 +3449,7 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 				        // Fill in any additional bg colors to right of our output
 				        while (x < x_end) {
 							if (x >= _displayclipx1) {
-				        		writedata16_cont(textbgcolor);
+				        		write16BitColor(textbgcolor);
 				        	}
 				        	x++;
 				        }
@@ -3461,7 +3463,7 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 				if (y >= _displayclipy1) {
 					for (int16_t xx = x_start; xx < x_end; xx++) {
 						if (xx >= _displayclipx1)  {
-							writedata16_cont(textbgcolor);
+							write16BitColor(textbgcolor);
 						}
 					}
 				}
