@@ -2405,7 +2405,7 @@ void ILI9488_t3::drawChar(int16_t x, int16_t y, unsigned char c,
 						}
 						for (xr=0; xr < size_x; xr++) {
 							if ((x >= _displayclipx1) && (x < _displayclipx2)) {
-								*pfbPixel = fgcolor_index;
+								*pfbPixel = bgcolor_index;
 							}
 							pfbPixel++;
 							x++;
