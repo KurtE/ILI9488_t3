@@ -498,11 +498,11 @@ void loop(void) {
     }
 
     if (ich == 'o')
-      drawTextScreen(1);
+      drawTextScreen1(1);
     else if (ich == 'f')
       fillScreenTest();
     else if (ich == 't')
-      drawTextScreen(0);
+      drawTextScreen1(0);
     else if (ich == 'r') {
       testDMAContUpdate(true);
       DBGSerial.println("Returned from testDMAContUpdate");
@@ -514,5 +514,84 @@ void loop(void) {
     else
       drawTestScreen();
   }
+}
 
+void drawTextScreen1(bool fOpaque) {
+  SetupOrClearClipRectAndOffsets();
+  tft.setTextSize(1);
+  uint32_t start_time = millis();
+  tft.useFrameBuffer(use_fb);
+  tft.fillScreen(use_fb ? ILI9488_RED : ILI9488_BLACK);
+  tft.setFont(Arial_28_Bold);
+//t  tft.setFont(Arial_40_Bold);
+  if (fOpaque)
+    tft.setTextColor(ILI9488_WHITE, use_fb ? ILI9488_BLACK : ILI9488_RED);
+  else
+    tft.setTextColor(ILI9488_WHITE);
+  tft.setCursor(0, 5);
+  tft.println("AbCdEfGhIj");
+#if 0
+  tft.setFont(Arial_28_Bold);
+  tft.println("0123456789!@#$");
+  tft.setFont(Arial_20_Bold);
+  tft.println("abcdefghijklmnopq");
+  tft.setFont(Arial_14_Bold);
+  tft.println("ABCDEFGHIJKLMNOPQRST");
+  tft.setFont(Arial_10_Bold);
+  tft.println("0123456789zyxwvutu");
+#endif
+  tft.setFont(&FreeMonoBoldOblique12pt7b);
+  printTextSizes("AdaFruit_MB_12");
+  if (fOpaque){
+    tft.setTextColor(ILI9488_RED, ILI9488_BLUE);
+    tft.print("A");
+    tft.setTextColor(ILI9488_WHITE, ILI9488_GREEN);
+    tft.print("d");
+    tft.setTextColor(ILI9488_RED, ILI9488_BLUE);
+    tft.print("a");
+    tft.setTextColor(ILI9488_WHITE, ILI9488_GREEN);
+    tft.print("F");
+    tft.setTextColor(ILI9488_RED, ILI9488_BLUE);
+    tft.print("R");
+    tft.setTextColor(ILI9488_WHITE, ILI9488_GREEN);
+    tft.print("u");
+    tft.setTextColor(ILI9488_RED, ILI9488_BLUE);
+    tft.print("i");
+    tft.setTextColor(ILI9488_WHITE, ILI9488_GREEN);
+    tft.print("t");
+    tft.setTextColor(ILI9488_RED, ILI9488_BLUE);
+    tft.print("_");
+    tft.setTextColor(ILI9488_WHITE, ILI9488_GREEN);
+    tft.print("M");
+    tft.setTextColor(ILI9488_RED, ILI9488_BLUE);
+    tft.print("B");
+    tft.setTextColor(ILI9488_WHITE, ILI9488_GREEN);
+    tft.print("_");
+    tft.setTextColor(ILI9488_RED, ILI9488_BLUE);
+    tft.print("1");
+    tft.setTextColor(ILI9488_WHITE, ILI9488_GREEN);
+    tft.println("2");
+    tft.setTextColor(ILI9488_WHITE, use_fb ? ILI9488_BLACK : ILI9488_RED);
+  }
+  else tft.println("AdaFruit_MB_12");
+  tft.setFont(&FreeSerif12pt7b);
+  printTextSizes("FreeSan12");
+  tft.println("FreeSan12");
+  tft.println();
+  tft.setTextSize(1,3);
+  printTextSizes("Size 1,3");
+  tft.println("Size 1,3");
+  tft.setFont();
+  tft.setCursor(0, 190);
+  tft.setTextSize(1,2);
+  printTextSizes("Sys(1,2)");
+  tft.println("Sys(1,2)");
+  tft.setTextSize(1);
+  printTextSizes("System");
+  tft.println("System");
+  tft.setTextSize(1);
+ 
+
+  tft.updateScreen();
+  DBGSerial.printf("Use FB: %d OP: %d, DT: %d OR: %d\n", use_fb, fOpaque, use_set_origin, millis() - start_time);
 }

@@ -541,7 +541,15 @@ class ILI9488_t3 : public Print
 	// GFX Font support
 	const GFXfont *gfxFont = nullptr;
 	int8_t _gfxFont_min_yOffset = 0;
-
+	
+	// Opaque font chracter overlap?
+	unsigned int _gfx_c_last;
+	int16_t   _gfx_last_cursor_x, _gfx_last_cursor_y;
+	int16_t	 _gfx_last_char_x_write = 0;
+	uint16_t _gfx_last_char_textcolor;
+	uint16_t _gfx_last_char_textbgcolor;
+	bool gfxFontLastCharPosFG(int16_t x, int16_t y);
+	
   	uint8_t  _rst;
   	uint8_t _cs, _dc;
 	uint8_t pcs_data, pcs_command;
