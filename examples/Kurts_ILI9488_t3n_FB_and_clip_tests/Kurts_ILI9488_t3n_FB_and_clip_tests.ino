@@ -15,9 +15,9 @@
 ILI9488_t3 tft = ILI9488_t3(&SPI,TFT_CS, TFT_DC, 8);
 #define DBGSerial Serial
 #else
-//#define DEFAULT_PINS
+#define DEFAULT_PINS
 //#define USE_SPI1
-#define KURTS_FLEXI
+//#define KURTS_FLEXI
 //#define FRANKS_C64
 
 #ifdef KURTS_FLEXI
@@ -43,12 +43,11 @@ ILI9488_t3 tft = ILI9488_t3(&SPI,TFT_CS, TFT_DC, 8);
 #define TFT_MISO        MISO
 
 #elif defined(DEFAULT_PINS)
-#define TFT_DC 9
-#define TFT_CS 10
+#define TFT_DC  9  // only CS pin 
+#define TFT_CS 10   // using standard pin
 #define TFT_RST 8
-#define TFT_SCK 13
-#define TFT_MISO 12
-#define TFT_MOSI 11
+ILI9488_t3 tft = ILI9488_t3(&SPI,TFT_CS, TFT_DC, 8);
+#define DBGSerial Serial
 
 #elif defined(USE_SPI1)
 #define TFT_DC 31
