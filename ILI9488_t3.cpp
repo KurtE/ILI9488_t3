@@ -58,7 +58,7 @@
 #define HEIGHT ILI9488_TFTHEIGHT
 
 #ifdef ENABLE_ILI9488_FRAMEBUFFER
-#define CBALLOC (ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)
+#define CBALLOC (ILI9488_TFTHEIGHT * ILI9488_TFTWIDTH * sizeof(RAFB))
 #define	COUNT_WORDS_WRITE  ((ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)/SCREEN_DMA_NUM_SETTINGS) // Note I know the divide will give whole number
 #endif
 
@@ -123,10 +123,13 @@ ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, u
 #ifdef ENABLE_ILI9488_FRAMEBUFFER
 	_use_fbtft = false;
 	_pfbtft = nullptr;
+#ifdef ILI9488_USES_PALLET
 	_pallet = NULL ;	// 
+
 	// Probably should check that it did not fail... 
 	_pallet_size = 0;					// How big is the pallet
 	_pallet_count = 0;					// how many items are in it...
+#endif
 #endif
 
  	uint32_t *pa = (uint32_t*)((void*)spi_port);
@@ -147,7 +150,7 @@ ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, u
 	
 	// Support for user to set Pallet. 
 void ILI9488_t3::setPallet(uint16_t *pal, uint16_t count) {
-#ifdef ENABLE_ILI9488_FRAMEBUFFER
+#ifdef ILI9488_USES_PALLET
 	if (_pallet && _pallet_size) free(_pallet);
 
 	_pallet = pal;
@@ -156,7 +159,7 @@ void ILI9488_t3::setPallet(uint16_t *pal, uint16_t count) {
 #endif
 }
 
-#ifdef ENABLE_ILI9488_FRAMEBUFFER
+#ifdef ILI9488_USES_PALLET
 uint8_t ILI9488_t3::doActualConvertColorToIndex(uint16_t color) {
 	if (_pallet == nullptr) {
 		// Need to allocate it... 
@@ -179,7 +182,7 @@ uint8_t ILI9488_t3::doActualConvertColorToIndex(uint16_t color) {
 #endif
 
 
-void ILI9488_t3::setFrameBuffer(uint8_t *frame_buffer) 
+void ILI9488_t3::setFrameBuffer(RAFB *frame_buffer) 
 {
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	_pfbtft = frame_buffer;
@@ -202,7 +205,7 @@ uint8_t ILI9488_t3::useFrameBuffer(boolean b)		// use the frame buffer?  First c
 			_we_allocated_buffer = (uint8_t *)malloc(CBALLOC+32);
 			if (_we_allocated_buffer == NULL)
 				return 0;	// failed 
-			_pfbtft = (uint8_t*) (((uintptr_t)_we_allocated_buffer + 32) & ~ ((uintptr_t) (31)));
+			_pfbtft = (RAFB*) (((uintptr_t)_we_allocated_buffer + 32) & ~ ((uintptr_t) (31)));
 			memset(_pfbtft, 0, CBALLOC);	
 		}
 		_use_fbtft = 1;
@@ -241,14 +244,21 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 
 			// BUGBUG doing as one shot.  Not sure if should or not or do like
 			// main code and break up into transactions...
-			uint8_t *pfbtft_end = &_pfbtft[(ILI9488_TFTWIDTH*ILI9488_TFTHEIGHT)-1];	// setup 
-			uint8_t *pftbft = _pfbtft;
+			RAFB *pfbtft_end = &_pfbtft[(ILI9488_TFTWIDTH*ILI9488_TFTHEIGHT)-1];	// setup 
+			RAFB *pftbft = _pfbtft;
 
 			// Quick write out the data;
+			#ifdef ILI9488_USES_PALLET
 			while (pftbft < pfbtft_end) {
 				write16BitColor(_pallet[*pftbft++]);
 			}
 			write16BitColor(_pallet[*pftbft], true);
+			#else
+			while (pftbft < pfbtft_end) {
+				write16BitColor(*pftbft++);
+			}
+			write16BitColor(*pftbft, true);
+			#endif
 		} else {
 			// setup just to output the clip rectangle area. 
 			setAddr(_displayclipx1, _displayclipy1, _displayclipx2-1, _displayclipy2-1);
@@ -256,9 +266,10 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 
 			// BUGBUG doing as one shot.  Not sure if should or not or do like
 			// main code and break up into transactions...
-			uint8_t * pfbPixel_row = &_pfbtft[ _displayclipy1*_width + _displayclipx1];
+			RAFB * pfbPixel_row = &_pfbtft[ _displayclipy1*_width + _displayclipx1];
+			#ifdef ILI9488_USES_PALLET
 			for (uint16_t y = _displayclipy1; y < _displayclipy2; y++) {
-				uint8_t * pfbPixel = pfbPixel_row;
+				RAFB * pfbPixel = pfbPixel_row;
 				for (uint16_t x = _displayclipx1; x < (_displayclipx2-1); x++) {
 					write16BitColor(_pallet[*pfbPixel++]);
 				}
@@ -268,6 +279,19 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 					write16BitColor(_pallet[*pfbPixel], true);
 				pfbPixel_row += _width;	// setup for the next row. 
 			}
+			#else
+			for (uint16_t y = _displayclipy1; y < _displayclipy2; y++) {
+				RAFB * pfbPixel = pfbPixel_row;
+				for (uint16_t x = _displayclipx1; x < (_displayclipx2-1); x++) {
+					write16BitColor(*pfbPixel++);
+				}
+				if (y < (_displayclipy2-1))
+					write16BitColor(*pfbPixel);
+				else	
+					write16BitColor(*pfbPixel, true);
+				pfbPixel_row += _width;	// setup for the next row. 
+			}
+			#endif
 		}
 		endSPITransaction();
 	}
@@ -477,7 +501,7 @@ void ILI9488_t3::drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint8_t * pfbPixel = &_pfbtft[ y*_width + x];
+		RAFB * pfbPixel = &_pfbtft[ y*_width + x];
 		uint16_t color_index = mapColorToPalletIndex(color);
 		while (h--) {
 			*pfbPixel = color_index;
@@ -508,7 +532,7 @@ void ILI9488_t3::drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
 		uint16_t color_index = mapColorToPalletIndex(color);
-		uint8_t * pfbPixel = &_pfbtft[ y*_width + x];
+		RAFB * pfbPixel = &_pfbtft[ y*_width + x];
 		while (w--) {
 			*pfbPixel++ = color_index;
 		}
@@ -544,21 +568,21 @@ void ILI9488_t3::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint8_t color_index = mapColorToPalletIndex(color);
+		uint16_t color_index = mapColorToPalletIndex(color);
 		//if (x==0 && y == 0) Serial.printf("fillrect %x %x %x\n", color, color_index, _pallet[color_index]);
-		if (1 || (x&3) || (w&3)) {
-			uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		//if (1 || (x&3) || (w&3)) {
+			RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
 			for (;h>0; h--) {
-				uint8_t * pfbPixel = pfbPixel_row;
+				RAFB * pfbPixel = pfbPixel_row;
 				for (int i = 0 ;i < w; i++) {
 					*pfbPixel++ = color_index;
 				}
 				pfbPixel_row += _width;
 			}
-		} else {
+		/*} else {  // never used as if(1 above...)
 			// Horizontal is even number so try 32 bit writes instead
 			uint32_t color32 = ((uint32_t)color_index << 24) | ((uint32_t)color_index << 16) | ((uint32_t)color_index << 8) | color_index;
-			uint32_t * pfbPixel_row = (uint32_t *)((uint8_t*)&_pfbtft[ y*_width + x]);
+			uint32_t * pfbPixel_row = (uint32_t *)((RAFB*)&_pfbtft[ y*_width + x]);
 			w = w/4;	// only iterate quarter the times
 			for (;h>0; h--) {
 				uint32_t * pfbPixel = pfbPixel_row;
@@ -567,7 +591,7 @@ void ILI9488_t3::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
 				}
 				pfbPixel_row += (_width/4);
 			}
-		}
+		} */
 	} else 
 	#endif
 	{
@@ -612,10 +636,10 @@ void ILI9488_t3::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t h, u
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
 			uint16_t color = RGB14tocolor565(r,g,b);
-			uint8_t * pfbPixel = pfbPixel_row;
+			RAFB * pfbPixel = pfbPixel_row;
 			for (int i = 0 ;i < w; i++) {
 				*pfbPixel++ = mapColorToPalletIndex(color);
 			}
@@ -666,9 +690,9 @@ void ILI9488_t3::fillRectHGradient(int16_t x, int16_t y, int16_t w, int16_t h, u
 	r=r1;g=g1;b=b1;	
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
-			uint8_t * pfbPixel = pfbPixel_row;
+			RAFB * pfbPixel = pfbPixel_row;
 			for (int i = 0 ;i < w; i++) {
 				*pfbPixel++ = mapColorToPalletIndex(RGB14tocolor565(r,g,b));
 				r+=dr;g+=dg; b+=db;
@@ -988,12 +1012,16 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
-			uint8_t * pfbPixel = pfbPixel_row;
+			RAFB * pfbPixel = pfbPixel_row;
 			for (int i = 0 ;i < w; i++) {
+#ifdef ILI9488_USES_PALLET
 				uint8_t color_index = *pfbPixel++;
 				*pcolors++ = _colors_are_index? color_index : _pallet[color_index];
+#else
+				*pcolors++ = *pfbPixel++;
+#endif				
 			}
 			pfbPixel_row += _width;
 		}
@@ -1065,12 +1093,16 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
-			uint8_t * pfbPixel = pfbPixel_row;
+			RAFB * pfbPixel = pfbPixel_row;
 			for (int i = 0 ;i < w; i++) {
+#ifdef ILI9488_USES_PALLET
 				uint16_t color_index = *pfbPixel++;
 				*pcolors++ = _colors_are_index? color_index : _pallet[color_index];
+#else
+				*pcolors++ = *pfbPixel++;
+#endif				
 			}
 			pfbPixel_row += _width;
 		}
@@ -1236,9 +1268,9 @@ void ILI9488_t3::writeRect(int16_t x, int16_t y, int16_t w, int16_t h, const uin
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
-			uint8_t * pfbPixel = pfbPixel_row;
+			RAFB * pfbPixel = pfbPixel_row;
 			pcolors += x_clip_left;
 			for (int i = 0 ;i < w; i++) {
 				*pfbPixel++ = mapColorToPalletIndex(*pcolors++);
@@ -1308,10 +1340,10 @@ void ILI9488_t3::writeRect8BPP(int16_t x, int16_t y, int16_t w, int16_t h, const
 	//Serial.printf("WR8C: %d %d %d %d %x- %d %d\n", x, y, w, h, (uint32_t)pixels, x_clip_right, x_clip_left);
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
 			pixels += x_clip_left;
-			uint8_t * pfbPixel = pfbPixel_row;
+			RAFB * pfbPixel = pfbPixel_row;
 			for (int i = 0 ;i < w; i++) {
 				*pfbPixel++ = mapColorToPalletIndex(palette[*pixels++]);
 			}
@@ -1345,6 +1377,12 @@ void ILI9488_t3::writeRect8BPP(int16_t x, int16_t y, int16_t w, int16_t h, const
 //					width must be at least 2 pixels
 void ILI9488_t3::writeRect4BPP(int16_t x, int16_t y, int16_t w, int16_t h, const uint8_t *pixels, const uint16_t * palette )
 {
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (_use_fbtft) {
+		writeRectNBPP(x, y, w, h, 4, pixels, palette); 
+		return;
+	}
+	#endif
    	beginSPITransaction();
 	setAddr(x, y, x+w-1, y+h-1);
 	writecommand_cont(ILI9488_RAMWR);
@@ -1365,6 +1403,12 @@ void ILI9488_t3::writeRect4BPP(int16_t x, int16_t y, int16_t w, int16_t h, const
 //					width must be at least 4 pixels
 void ILI9488_t3::writeRect2BPP(int16_t x, int16_t y, int16_t w, int16_t h, const uint8_t *pixels, const uint16_t * palette )
 {
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (_use_fbtft) {
+		writeRectNBPP(x, y, w, h, 2, pixels, palette); 
+		return;
+	}
+	#endif
    	beginSPITransaction();
 	setAddr(x, y, x+w-1, y+h-1);
 	writecommand_cont(ILI9488_RAMWR);
@@ -1390,6 +1434,12 @@ void ILI9488_t3::writeRect2BPP(int16_t x, int16_t y, int16_t w, int16_t h, const
 //					width must be at least 8 pixels
 void ILI9488_t3::writeRect1BPP(int16_t x, int16_t y, int16_t w, int16_t h, const uint8_t *pixels, const uint16_t * palette )
 {
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (_use_fbtft) {
+		writeRectNBPP(x, y, w, h, 1, pixels, palette); 
+		return;
+	}
+	#endif
    	beginSPITransaction();
 	setAddr(x, y, x+w-1, y+h-1);
 	writecommand_cont(ILI9488_RAMWR);
@@ -1469,9 +1519,9 @@ void ILI9488_t3::writeRectNBPP(int16_t x, int16_t y, int16_t w, int16_t h,  uint
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+		RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
 		for (;h>0; h--) {
-			uint8_t * pfbPixel = pfbPixel_row;
+			RAFB * pfbPixel = pfbPixel_row;
 			pixels = pixels_row_start;				// setup for this row
 			uint8_t pixel_shift = row_shift_init;			// Setup mask
 
@@ -1539,8 +1589,10 @@ static const uint8_t init_commands[] = {
 };
 
 
-void ILI9488_t3::begin(void)
+void ILI9488_t3::begin(uint32_t clock)
 {
+	_clock = clock;	// remember the passed in clock...
+
     // verify SPI pins are valid;
     //Serial.printf("::begin %x %x %x %d %d %d\n", (uint32_t)spi_port, (uint32_t)_pkinetisk_spi, (uint32_t)_spi_hardware, _mosi, _miso, _sclk);
     #ifdef KINETISK
@@ -2378,9 +2430,9 @@ void ILI9488_t3::drawChar(int16_t x, int16_t y, unsigned char c,
 
 		#ifdef ENABLE_ILI9488_FRAMEBUFFER
 		if (_use_fbtft) {
-			uint8_t * pfbPixel_row = &_pfbtft[ y*_width + x];
+			RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
 			// lets try to output the values directly...
-			uint8_t * pfbPixel;
+			RAFB * pfbPixel;
 			uint8_t bgcolor_index = mapColorToPalletIndex(bgcolor);
 			uint8_t fgcolor_index = mapColorToPalletIndex(fgcolor);
 			uint8_t color_idx;
@@ -2755,10 +2807,10 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 */
 		#ifdef ENABLE_ILI9488_FRAMEBUFFER
 		if (_use_fbtft) {
-			uint8_t * pfbPixel_row = &_pfbtft[ start_y*_width + start_x];
-			uint8_t * pfbPixel;
-			uint8_t textbgcolor_index = mapColorToPalletIndex(textbgcolor);
-			uint8_t textcolor_index = mapColorToPalletIndex(textcolor);
+			RAFB * pfbPixel_row = &_pfbtft[ start_y*_width + start_x];
+			RAFB * pfbPixel;
+			uint16_t textbgcolor_index = mapColorToPalletIndex(textbgcolor);
+			uint16_t textcolor_index = mapColorToPalletIndex(textcolor);
 			int screen_y = start_y;
 			int screen_x;
 
@@ -3376,11 +3428,11 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 
 		#ifdef ENABLE_ILI9488_FRAMEBUFFER
 		if (_use_fbtft) {
-			uint8_t * pfbPixel_row = &_pfbtft[ y_start *_width + x_start];
+			RAFB * pfbPixel_row = &_pfbtft[ y_start *_width + x_start];
 			// lets try to output the values directly...
-			uint8_t * pfbPixel;
-			uint8_t textbgcolor_index = mapColorToPalletIndex(textbgcolor);
-			uint8_t textcolor_index = mapColorToPalletIndex(textcolor);
+			RAFB * pfbPixel;
+			uint16_t textbgcolor_index = mapColorToPalletIndex(textbgcolor);
+			uint16_t textcolor_index = mapColorToPalletIndex(textcolor);
 			
 			// First lets fill in the top parts above the actual rectangle...
 			while (y_top_fill--) {
@@ -4180,10 +4232,14 @@ void ILI9488_t3::dumpDMASettings() {
 #if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
 bool ILI9488_t3::fillDMApixelBuffer(uint32_t *dma_buffer_pointer)
 {
-	uint8_t *frame_buffer_pixel_ptr = &_pfbtft[_dma_pixel_index];
+	RAFB *frame_buffer_pixel_ptr = &_pfbtft[_dma_pixel_index];
 
 	for (uint16_t i = 0; i < DMA_PIXELS_OUTPUT_PER_DMA; i++) {
+		#ifdef ILI9488_USES_PALLET
 		uint16_t color = _pallet[*frame_buffer_pixel_ptr++]; 	// extract the 16 bit color
+		#else
+		uint16_t color = *frame_buffer_pixel_ptr++; 	// extract the 16 bit color
+		#endif
 		uint32_t r = (color & 0xF800) >> 11;
 		uint32_t g = (color & 0x07E0) >> 5;
 		uint32_t b = color & 0x001F;
@@ -4205,9 +4261,9 @@ bool ILI9488_t3::fillDMApixelBuffer(uint32_t *dma_buffer_pointer)
 
 #else
 // T3.x - Don't have 24/32 bit SPI transfers so output byte at a time...
-bool ILI9488_t3::fillDMApixelBuffer(uint8_t *dma_buffer_pointer)
+bool ILI9488_t3::fillDMApixelBuffer(RAFB *dma_buffer_pointer)
 {
-	uint8_t *frame_buffer_pixel_ptr = &_pfbtft[_dma_pixel_index];
+	RAFB *frame_buffer_pixel_ptr = &_pfbtft[_dma_pixel_index];
 
 	for (uint16_t i = 0; i < DMA_PIXELS_OUTPUT_PER_DMA; i++) {
 		uint16_t color = _pallet[*frame_buffer_pixel_ptr++]; 	// extract the 16 bit color
@@ -4457,4 +4513,3 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 		write16BitColor(color);
 	}
 
-	

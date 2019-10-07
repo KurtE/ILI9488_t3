@@ -65,8 +65,17 @@
 #ifndef DISABLE_ILI9488_FRAMEBUFFER
 #if defined(__MK64FX512__) || defined(__MK66FX1M0__)
 #define ENABLE_ILI9488_FRAMEBUFFER
+#define ILI9488_USES_PALLET
+typedef uint8_t RAFB;
 #elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
 #define ENABLE_ILI9488_FRAMEBUFFER
+// define ILI9488_USES_PALLET if you wish to force T4 to use 8 bit buffer instead of 16 bit
+//#define ILI9488_USES_PALLET
+#ifdef ILI9488_USES_PALLET
+typedef uint8_t RAFB;
+#else
+typedef uint16_t RAFB;
+#endif
 #endif
 #endif
 
@@ -258,7 +267,7 @@ class ILI9488_t3 : public Print
 {
   public:
 	ILI9488_t3(SPIClass *SPIWire, uint8_t _CS, uint8_t _DC, uint8_t _RST = 255, uint8_t _MOSI=11, uint8_t _SCLK=13, uint8_t _MISO=12);
-	void begin(void);
+	void begin(uint32_t clock = ILI9488_SPICLOCK);
   	void sleep(bool enable);		
 	void pushColor(uint16_t color);
 	void fillScreen(uint16_t color);
@@ -439,19 +448,30 @@ class ILI9488_t3 : public Print
 	void scrollTextArea(uint8_t scrollSize);
 	void resetScrollBackgroundColor(uint16_t color);
 	
-	// added support to use optional Frame buffer
-	void	setFrameBuffer(uint8_t *frame_buffer);
 #ifdef ENABLE_ILI9488_FRAMEBUFFER
-	uint8_t *getFrameBuffer() {return _pfbtft;}
+	// added support to use optional Frame buffer
+	// Wonder if this should be void*
+	void	setFrameBuffer(RAFB *frame_buffer);
+	RAFB 	*getFrameBuffer() {return _pfbtft;}
+#ifdef ILI9488_USES_PALLET
 	uint16_t *getPallet() {return _pallet; }
 	void	colorsArePalletIndex(boolean b) {_colors_are_index = b;}
 	boolean	colorsArePalletIndex() {return _colors_are_index;}
-	inline uint8_t mapColorToPalletIndex(uint16_t color) 
+	inline uint16_t mapColorToPalletIndex(uint16_t color) 
 		{
 			if (_pallet && _colors_are_index) return (uint8_t)color;
 			return doActualConvertColorToIndex(color);		
 		}
 #else
+	// not using pallet
+	uint16_t *getPallet() {return nullptr; }
+	void	colorsArePalletIndex(boolean b) {;}
+	boolean	colorsArePalletIndex() {return true;}
+	inline uint16_t mapColorToPalletIndex(uint16_t color) { return color; }
+#endif 		
+#else
+	// added support to use optional Frame buffer
+	void	setFrameBuffer(uint8_t *frame_buffer);
 	uint8_t *getFrameBuffer() {return nullptr;}
 	uint16_t *getPallet() {return nullptr; }
 	void	colorsArePalletIndex(boolean b) {;}
@@ -484,6 +504,7 @@ class ILI9488_t3 : public Print
 
 
  protected:
+ 	uint32_t				_clock;
     SPIClass                *spi_port;
 	SPIClass::SPI_Hardware_t *_spi_hardware;
     //uint32_t                _spi_port_memorymap = 0;
@@ -580,15 +601,16 @@ class ILI9488_t3 : public Print
 #ifdef ENABLE_ILI9488_FRAMEBUFFER
 	enum {DMA_PIXELS_OUTPUT_PER_DMA=80};  // How many pixels at a time?
     // Add support for optional frame buffer
-    uint8_t		*_pfbtft;						// Optional Frame buffer 
+    RAFB		*_pfbtft;						// Optional Frame buffer 
     uint8_t		_use_fbtft;						// Are we in frame buffer mode?
     uint8_t		*_we_allocated_buffer;			// We allocated the buffer; 
 
+#ifdef ILI9488_USES_PALLET
     uint16_t	*_pallet;						// Support for user to set Pallet. 
     uint16_t	_pallet_size;					// How big is the pallet
     uint16_t	_pallet_count;					// how many items are in it...
     boolean		_colors_are_index;				// are the values passed in index or color?
-
+#endif
     // Add DMA support. 
 	static  ILI9488_t3 		*_dmaActiveDisplay;  // Use pointer to this as a way to get back to object...
 	static volatile uint8_t  	_dma_state;  		// DMA status
@@ -599,19 +621,19 @@ class ILI9488_t3 : public Print
 	static DMASetting 	_dmasettings[3];
 	static DMAChannel  	_dmatx;
 
-	bool fillDMApixelBuffer(uint8_t *buffer_ptr);
+	bool fillDMApixelBuffer(RAFB *buffer_ptr);
 
-	uint8_t _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
-	uint8_t _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+	RAFB _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+	RAFB _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
 
 	#elif defined(__MK64FX512__)
 	// T3.5 - had issues scatter/gather so do just use channels/interrupts
 	// and update and continue
 	static DMAChannel  	_dmatx;
-	bool fillDMApixelBuffer(uint8_t *buffer_ptr);
+	bool fillDMApixelBuffer(RAFB *buffer_ptr);
 
-	uint8_t _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
-	uint8_t _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+	RAFB _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
+	RAFB _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA*3] __attribute__ ((aligned(4)));
 
 	#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
 	// Going to try it similar to T4.
@@ -697,7 +719,12 @@ class ILI9488_t3 : public Print
 		}
 	}
 
-	void beginSPITransaction(uint32_t clock = ILI9488_SPICLOCK)  __attribute__((always_inline)) {
+	void beginSPITransaction()  __attribute__((always_inline)) {
+		spi_port->beginTransaction(SPISettings(_clock, MSBFIRST, SPI_MODE0));
+		if (_csport)
+			DIRECT_WRITE_LOW(_csport, _cspinmask);
+	}
+	void beginSPITransaction(uint32_t clock)  __attribute__((always_inline)) {
 		spi_port->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
 		if (_csport)
 			DIRECT_WRITE_LOW(_csport, _cspinmask);
@@ -784,7 +811,13 @@ class ILI9488_t3 : public Print
 			tmp = _pkinetisk_spi->POPR;
 		}
 	}
-	void beginSPITransaction(uint32_t clock = ILI9488_SPICLOCK)  __attribute__((always_inline)) {
+	void beginSPITransaction()  __attribute__((always_inline)) {
+		spi_port->beginTransaction(SPISettings(_clock, MSBFIRST, SPI_MODE0));
+		if (_csport)
+			*_csport  &= ~_cspinmask;
+	}
+
+	void beginSPITransaction(uint32_t clock)  __attribute__((always_inline)) {
 		spi_port->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
 		if (_csport)
 			*_csport  &= ~_cspinmask;
@@ -898,7 +931,12 @@ class ILI9488_t3 : public Print
 		_pending_rx_count++; 	// let system know we sent something	
 	}
 
-	void beginSPITransaction(uint32_t clock = ILI9488_SPICLOCK) __attribute__((always_inline)) {
+	void beginSPITransaction() __attribute__((always_inline)) {
+		spi_port->beginTransaction(SPISettings(_clock, MSBFIRST, SPI_MODE0));
+		if (_csport)
+			*_csport  &= ~_cspinmask;
+	}
+	void beginSPITransaction(uint32_t clock) __attribute__((always_inline)) {
 		spi_port->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
 		if (_csport)
 			*_csport  &= ~_cspinmask;
