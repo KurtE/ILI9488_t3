@@ -76,6 +76,9 @@ typedef uint8_t RAFB;
 #else
 typedef uint16_t RAFB;
 #endif
+#else 
+// won't be used on processors like T3.2 but allow api exist and not compile error
+typedef uint8_t RAFB;
 #endif
 #endif
 
