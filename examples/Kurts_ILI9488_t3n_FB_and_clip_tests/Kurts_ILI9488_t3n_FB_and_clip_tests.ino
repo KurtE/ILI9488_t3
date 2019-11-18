@@ -93,7 +93,7 @@ void setup() {
   DBGSerial.begin(115200);
   //DBGSerial.printf("Begin: CS:%d, DC:%d, MOSI:%d, MISO: %d, SCK: %d, RST: %d\n", TFT_CS, TFT_DC, TFT_MOSI, TFT_MISO, TFT_SCK, TFT_RST);
 
-  tft.begin();
+  tft.begin(10000000);
   tft.setFrameBuffer(tft_frame_buffer);
 
   tft.setRotation(ROTATION);
