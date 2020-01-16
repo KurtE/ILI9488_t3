@@ -2520,7 +2520,7 @@ void ILI9488_t3::drawChar(int16_t x, int16_t y, unsigned char c,
 		}
 	}
 }
-void ILI9488_t3::setFont(const ILI9488_t3_font_t &f) {
+void ILI9488_t3::setFont(const ILI9341_t3_font_t &f) {
 	_gfx_last_char_x_write = 0;	// Don't use cached data here
 	font = &f;
 	if (gfxFont) {

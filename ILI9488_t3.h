@@ -82,6 +82,8 @@ typedef uint8_t RAFB;
 #endif
 #endif
 
+#include "ILI9341_fonts.h"
+
 #define ILI9488_TFTWIDTH  320
 #define ILI9488_TFTHEIGHT 480
 
@@ -175,29 +177,6 @@ typedef uint8_t RAFB;
 
 #define sint16_t int16_t
 
-
-// Documentation on the ILI9488_t3 font data format:
-// https://forum.pjrc.com/threads/54316-ILI9488_t-font-structure-format
-
-typedef struct {
-	const unsigned char *index;
-	const unsigned char *unicode;
-	const unsigned char *data;
-	unsigned char version;
-	unsigned char reserved;
-	unsigned char index1_first;
-	unsigned char index1_last;
-	unsigned char index2_first;
-	unsigned char index2_last;
-	unsigned char bits_index;
-	unsigned char bits_width;
-	unsigned char bits_height;
-	unsigned char bits_xoffset;
-	unsigned char bits_yoffset;
-	unsigned char bits_delta;
-	unsigned char line_space;
-	unsigned char cap_height;
-} ILI9488_t3_font_t;
 
 // Lets see about supporting Adafruit fonts as well?
 #ifndef _GFXFONT_H_
@@ -410,7 +389,7 @@ class ILI9488_t3 : public Print
 	void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
 	int16_t getCursorX(void) const { return cursor_x; }
 	int16_t getCursorY(void) const { return cursor_y; }
-	void setFont(const ILI9488_t3_font_t &f);
+	void setFont(const ILI9341_t3_font_t &f);
     void setFont(const GFXfont *f = NULL);
 	void setFontAdafruit(void) { setFont(); }
 	void drawFontChar(unsigned int c);
@@ -548,7 +527,7 @@ class ILI9488_t3 : public Print
 	uint8_t textsize, textsize_x, textsize_y, rotation,textdatum;
 	uint32_t textcolorPrexpanded, textbgcolorPrexpanded;
 	boolean wrap; // If set, 'wrap' text at right edge of display
-	const ILI9488_t3_font_t *font;
+	const ILI9341_t3_font_t *font;
 
 	// Anti-aliased font support
 	uint8_t fontbpp = 1;
