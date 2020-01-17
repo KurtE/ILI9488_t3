@@ -21,10 +21,11 @@ void setup() {
   tft.setRotation(1);
   tft.fillScreen(ILI9488_BLACK);
 
-  tft.setCursor(0,0);
+  tft.setTextSize(2);
   tft.setTextColor(ILI9488_WHITE);
   tft.println("Test of the default font");
   tft.println();
+  tft.setTextSize(1);
 
   tft.setTextColor(ILI9488_WHITE, ILI9488_BLUE);
   tft.setFont(ComicSansMS_12);
@@ -44,7 +45,7 @@ void setup() {
   tft.setTextColor(ILI9488_BLUE);
   tft.println("Transparent GFX");
 
-  tft.setFont();
+  tft.setFont(); tft.setTextSize(2);
   tft.setTextColor(ILI9488_GREEN);
   tft.setTextSize(1);
   tft.println("This is default font:");
