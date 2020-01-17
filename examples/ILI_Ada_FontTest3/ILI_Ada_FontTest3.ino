@@ -30,47 +30,47 @@ void setup() {
   tft.fillScreen(ILI9488_BLACK);
 
   tft.setTextColor(ILI9488_WHITE);
-  tft.setFont(Arial_14);
-  tft.println("Arial_14");
+  tft.setFont(Arial_12);
+  tft.println("Arial_12");
   displayStuff();
 
   tft.setTextColor(ILI9488_YELLOW);
-  tft.setFont(Arial_14_Bold);
-  tft.println("ArialBold 14");
+  tft.setFont(Arial_12_Bold);
+  tft.println("ArialBold 12");
   displayStuff();
 
   tft.setTextColor(ILI9488_GREEN);
-  tft.setFont(ComicSansMS_14);
-  tft.println("ComicSansMS 14");
+  tft.setFont(ComicSansMS_12);
+  tft.println("ComicSansMS 12");
   displayStuff(); 
 
   nextPage();
   
   tft.setTextColor(ILI9488_WHITE);
-  tft.setFont(DroidSans_14);
-  tft.println("DroidSans_14");
+  tft.setFont(DroidSans_12);
+  tft.println("DroidSans_12");
   displayStuff();
 
   tft.setTextColor(ILI9488_YELLOW);
-  tft.setFont(Michroma_14);
-  tft.println("Michroma_14");
+  tft.setFont(Michroma_12);
+  tft.println("Michroma_12");
   displayStuff();
 
   tft.setTextColor(ILI9488_BLACK, ILI9488_YELLOW);
-  tft.setFont(Crystal_24_Italic);
-  tft.println("CRYSTAL_24");
+  tft.setFont(Crystal_18_Italic);
+  tft.println("CRYSTAL_18");
   displayStuff();
 
   nextPage();
 
   tft.setTextColor(ILI9488_GREEN);
-  tft.setFont(Chancery_24_Italic);
-  tft.println("Chancery_24_Italic");
+  tft.setFont(Chancery_18_Italic);
+  tft.println("Chancery_18_Italic");
   displayStuff();
 
   //anti-alias font OpenSans
   tft.setTextColor(ILI9488_RED, ILI9488_YELLOW);
-  tft.setFont(OpenSans24);
+  tft.setFont(OpenSans18);
   tft.println("OpenSans 18");
   displayStuff(); 
   
@@ -87,51 +87,51 @@ void loop()
   nextPage();
 
   tft.setTextColor(ILI9488_WHITE);
-  tft.setFont(Arial_14);
-  tft.println("Arial_14");
+  tft.setFont(Arial_12);
+  tft.println("Arial_12");
   displayStuff1();
 
   tft.setTextColor(ILI9488_YELLOW);
-  tft.setFont(Arial_14_Bold);
+  tft.setFont(Arial_12_Bold);
   tft.println("ArialBold 14");
   displayStuff1();
 
   nextPage();
 
   tft.setTextColor(ILI9488_GREEN);
-  tft.setFont(ComicSansMS_14);
+  tft.setFont(ComicSansMS_12);
   tft.println("ComicSansMS 14");
   displayStuff1(); 
 
   tft.setTextColor(ILI9488_WHITE);
-  tft.setFont(DroidSans_14);
-  tft.println("DroidSans_14");
+  tft.setFont(DroidSans_12);
+  tft.println("DroidSans_12");
   displayStuff1();
 
   nextPage();
 
   tft.setTextColor(ILI9488_YELLOW);
-  tft.setFont(Michroma_14);
-  tft.println("Michroma_14");
+  tft.setFont(Michroma_12);
+  tft.println("Michroma_12");
   displayStuff1();
 
   nextPage();
   
   tft.setTextColor(ILI9488_BLACK, ILI9488_YELLOW);
-  tft.setFont(Crystal_24_Italic);
-  tft.println("CRYSTAL_24");
+  tft.setFont(Crystal_18_Italic);
+  tft.println("CRYSTAL_18");
   displayStuff1();
 
   tft.setTextColor(ILI9488_GREEN);
-  tft.setFont(Chancery_24_Italic);
-  tft.println("Chancery_24_Italic");
+  tft.setFont(Chancery_18_Italic);
+  tft.println("Chancery_18_Italic");
   displayStuff1();
   
   nextPage();
 
   //anti-alias font OpenSans
   tft.setTextColor(ILI9488_RED, ILI9488_YELLOW);
-  tft.setFont(OpenSans24);
+  tft.setFont(OpenSans18);
   tft.println("OpenSans 18");
   displayStuff1(); 
 
