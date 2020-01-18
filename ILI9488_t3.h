@@ -345,8 +345,8 @@ class ILI9488_t3 : public Print
 	void drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg, uint8_t size_x, uint8_t size_y);
 	void inline drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg, uint8_t size) 
 	    { drawChar(x, y, c, color, bg, size);}
-
-	void setCursor(int16_t x, int16_t y);
+	static const int16_t CENTER = 9998;
+	void setCursor(int16_t x, int16_t y, bool autoCenter=false);
     void getCursor(int16_t *x, int16_t *y);
 	void setTextColor(uint16_t c);
 	void setTextColor(uint16_t c, uint16_t bg);
@@ -382,7 +382,7 @@ class ILI9488_t3 : public Print
 		}
 
 	virtual size_t write(uint8_t);
-	int16_t width(void)  { return _width; }
+	virtual size_t write(const uint8_t *buffer, size_t size);	int16_t width(void)  { return _width; }
 	int16_t height(void) { return _height; }
 	uint8_t getRotation(void);
 	void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color);
@@ -395,12 +395,15 @@ class ILI9488_t3 : public Print
 	void drawFontChar(unsigned int c);
 	void drawGFXFontChar(unsigned int c);
 
+    void getTextBounds(const uint8_t *buffer, uint16_t len, int16_t x, int16_t y,
+      int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
     void getTextBounds(const char *string, int16_t x, int16_t y,
       int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
     void getTextBounds(const String &str, int16_t x, int16_t y,
       int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
 	int16_t strPixelLen(const char * str);
 	
+	uint32_t fetchpixel(const uint8_t *p, uint32_t index, uint32_t x);
 	void drawFontPixel( uint8_t alpha, uint32_t x, uint32_t y );
 
 	void write16BitColor(uint16_t color, bool last_pixel=false);
@@ -501,7 +504,8 @@ class ILI9488_t3 : public Print
 #endif
 	int16_t _width, _height; // Display w/h as modified by current rotation
 	int16_t  cursor_x, cursor_y;
-	
+	bool 	_center_x_text = false; 
+	bool 	_center_y_text = false; 
 	int16_t  _clipx1, _clipy1, _clipx2, _clipy2;
 	int16_t  _originx, _originy;
 	int16_t  _displayclipx1, _displayclipy1, _displayclipx2, _displayclipy2;
@@ -966,7 +970,38 @@ class ILI9488_t3 : public Print
 	void VLine(int16_t x, int16_t y, int16_t h, uint16_t color);
 	void Pixel(int16_t x, int16_t y, uint16_t color);
 
-
+	/**
+	 * Found in a pull request for the Adafruit framebuffer library. Clever!
+	 * https://github.com/tricorderproject/arducordermini/pull/1/files#diff-d22a481ade4dbb4e41acc4d7c77f683d
+	 * Converts  0000000000000000rrrrrggggggbbbbb
+	 *     into  00000gggggg00000rrrrr000000bbbbb
+	 * with mask 00000111111000001111100000011111
+	 * This is useful because it makes space for a parallel fixed-point multiply
+	 * This implements the linear interpolation formula: result = bg * (1.0 - alpha) + fg * alpha
+	 * This can be factorized into: result = bg + (fg - bg) * alpha
+	 * alpha is in Q1.5 format, so 0.0 is represented by 0, and 1.0 is represented by 32
+	 * @param	fg		Color to draw in RGB565 (16bit)
+	 * @param	bg		Color to draw over in RGB565 (16bit)
+	 * @param	alpha	Alpha in range 0-255
+	 **/
+	uint16_t alphaBlendRGB565( uint32_t fg, uint32_t bg, uint8_t alpha )
+	 __attribute__((always_inline)) {
+	 	alpha = ( alpha + 4 ) >> 3; // from 0-255 to 0-31
+		bg = (bg | (bg << 16)) & 0b00000111111000001111100000011111;
+		fg = (fg | (fg << 16)) & 0b00000111111000001111100000011111;
+		uint32_t result = ((((fg - bg) * alpha) >> 5) + bg) & 0b00000111111000001111100000011111;
+		return (uint16_t)((result >> 16) | result); // contract result
+	}
+	
+	/**
+	 * Same as above, but fg and bg are premultiplied, and alpah is already in range 0-31
+	 */
+	uint16_t alphaBlendRGB565Premultiplied( uint32_t fg, uint32_t bg, uint8_t alpha )
+	 __attribute__((always_inline)) {
+		uint32_t result = ((((fg - bg) * alpha) >> 5) + bg) & 0b00000111111000001111100000011111;
+		return (uint16_t)((result >> 16) | result); // contract result
+	}
+	
 	void drawFontBits(bool opaque, uint32_t bits, uint32_t numbits, int32_t x, int32_t y, uint32_t repeat);};
 
 #ifndef swap
