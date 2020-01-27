@@ -177,6 +177,8 @@ typedef uint8_t RAFB;
 
 #define sint16_t int16_t
 
+// Map fonts that were modified back to the ILI9341 font
+#define ILI9488_t3_font_t ILI9341_t3_font_t
 
 // Lets see about supporting Adafruit fonts as well?
 #ifndef _GFXFONT_H_
