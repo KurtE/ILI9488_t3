@@ -77,7 +77,16 @@ uint16_t our_pallet[] = {
 Adafruit_GFX_Button button;
 
 // Let's allocate the frame buffer ourself.
-DMAMEM uint8_t tft_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
+DMAMEM RAFB tft_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
+
+#if defined(ARDUINO_TEENSY41)
+#include <extRAM_t4.h>
+extRAM_t4 ext_mem;
+EXTMEM RAFB extmem_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
+uint8_t use_extmem = 0;
+
+#endif
+
 
 uint8_t use_dma = 0;
 uint8_t use_clip_rect = 0;
@@ -93,7 +102,7 @@ void setup() {
   DBGSerial.begin(115200);
   //DBGSerial.printf("Begin: CS:%d, DC:%d, MOSI:%d, MISO: %d, SCK: %d, RST: %d\n", TFT_CS, TFT_DC, TFT_MOSI, TFT_MISO, TFT_SCK, TFT_RST);
 
-  tft.begin(10000000);
+  tft.begin();
   tft.setFrameBuffer(tft_frame_buffer);
 
   tft.setRotation(ROTATION);
@@ -115,6 +124,10 @@ void setup() {
 #endif
 
   button.initButton(&tft, 200, 125, 100, 40, ILI9488_GREEN, ILI9488_YELLOW, ILI9488_RED, "UP", 1, 1);
+#if defined(ARDUINO_TEENSY41)
+  ext_mem.begin();
+  testEXTMem();
+#endif  
 
   drawTestScreen();
 }
@@ -272,6 +285,26 @@ void drawTestScreen() {
   tft.setFontAdafruit();
   button.drawButton();
 
+  // Lets fill up some more of the larger screen.
+  tft.fillCircle(380, 220, 80, ILI9488_GREEN);
+  tft.fillCircle(380, 220, 60, ILI9488_BLUE);
+  tft.drawCircle(380, 220, 40, ILI9488_RED);
+  tft.drawCircle(380, 220, 20, ILI9488_YELLOW);
+
+  tft.fillTriangle(20, 300, 170, 300, 95, 240, ILI9488_GREEN);
+  tft.fillTriangle(40, 280, 150, 280, 95, 220, ILI9488_RED);
+  tft.drawTriangle(60, 260, 130, 260, 95, 200, ILI9488_YELLOW);
+  tft.drawTriangle(80, 240, 110, 240, 95, 180, ILI9488_BLUE);
+
+  tft.setFont(&FreeMonoBoldOblique12pt7b);
+  tft.setCursor(250, 50);
+  tft.setTextColor(ILI9488_WHITE);
+  tft.println("Adafruit");
+  tft.setCursor(250, tft.getCursorY());
+  tft.setTextColor(ILI9488_WHITE, ILI9488_GREEN);
+  tft.println("MonoBold");
+
+
   if (use_dma) {
     tft.updateScreenAsync();
   } else {
@@ -394,7 +427,7 @@ void testDMAContUpdate(bool fCont) {
 
   // check to see if screen memory actually turned green.
   if (use_fb) {
-    uint8_t *pw = tft.getFrameBuffer();
+    RAFB *pw = tft.getFrameBuffer();
     int error_count = 0;
     for (int i = 0; i < (ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT); i++)
     {
@@ -488,6 +521,19 @@ void loop(void) {
       else DBGSerial.println("DMA turned off");
       return;
     }
+#if defined(ARDUINO_TEENSY41)
+    if (ich == 'e') {
+      use_extmem = !use_extmem;
+      if (use_extmem) {
+        tft.setFrameBuffer(extmem_frame_buffer);
+        DBGSerial.println("Using External memory");
+      } else  {
+        tft.setFrameBuffer(tft_frame_buffer);
+        DBGSerial.println("Using DMAMEM");
+      }
+      return;
+    }
+#endif
 
     if (ich == 's') {
       use_set_origin = !use_set_origin;
@@ -594,3 +640,29 @@ void drawTextScreen1(bool fOpaque) {
   tft.updateScreen();
   DBGSerial.printf("Use FB: %d OP: %d, DT: %d OR: %d\n", use_fb, fOpaque, use_set_origin, millis() - start_time);
 }
+
+#if defined(ARDUINO_TEENSY41)
+void  testEXTMem() {
+  elapsedMicros em;
+  tft.useFrameBuffer(true);
+  // Lets see DMAMEM versus EXTMEM
+  for (uint8_t i = 0; i < 5; i++) {
+    em = 0;
+    tft.setFrameBuffer(tft_frame_buffer);
+    tft.fillScreen(ILI9488_GREEN);
+    tft.updateScreen();
+    DBGSerial.printf("DMA(%x) %d\n", (uint32_t)tft_frame_buffer, (uint32_t)em);
+    delay(250);
+    em = 0;
+    tft.setFrameBuffer(extmem_frame_buffer);
+    tft.fillScreen(ILI9488_RED);
+    tft.updateScreen();
+    DBGSerial.printf("EXT(%x) %d\n",  (uint32_t)extmem_frame_buffer, (uint32_t)em);
+    delay(250);
+  }
+  WaitForUserInput();
+  tft.useFrameBuffer(false);
+  tft.setFrameBuffer(tft_frame_buffer);
+
+}
+#endif
