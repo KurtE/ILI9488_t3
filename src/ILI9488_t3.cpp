@@ -81,15 +81,20 @@ DMAChannel  ILI9488_t3::_dmatx;
 #endif
 
 
-DMASetting 	ILI9488_t3::_dmasettings[2];
-DMAChannel 	ILI9488_t3::_dmatx;
+//DMASetting 	ILI9488_t3::_dmasettings[2];
+//DMAChannel 	ILI9488_t3::_dmatx;
 #else
 #endif	
 
 #ifdef ENABLE_ILI9488_FRAMEBUFFER
+#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+ILI9488_t3 *ILI9488_t3::_dmaActiveDisplay[3] = {0, 0, 0};
+#else
 ILI9488_t3 *ILI9488_t3::_dmaActiveDisplay = 0;
+
 volatile uint8_t  	ILI9488_t3::_dma_state = 0;  // Use pointer to this as a way to get back to object...
 volatile uint32_t	ILI9488_t3::_dma_frame_count = 0;	// Can return a frame count...
+#endif
 volatile uint32_t 	ILI9488_t3::_dma_pixel_index = 0;
 volatile uint16_t	ILI9488_t3::_dma_sub_frame_count = 0;	// Can return a frame count...
 
@@ -254,6 +259,18 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 				write16BitColor(_pallet[*pftbft++]);
 			}
 			write16BitColor(_pallet[*pftbft], true);
+			#elif defined(ENABLE_EXT_DMA_UPDATES)
+			maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
+			while (pftbft < pfbtft_end) {
+				_pimxrt_spi->TDR = *pftbft++;
+				_pending_rx_count++;	//
+				waitFifoNotFull();
+			}
+			maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23));
+			_pimxrt_spi->TDR = *pftbft;
+			_pending_rx_count++;	//
+			waitTransmitComplete();
+
 			#else
 			while (pftbft < pfbtft_end) {
 				write16BitColor(*pftbft++);
@@ -280,6 +297,30 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 					write16BitColor(_pallet[*pfbPixel], true);
 				pfbPixel_row += _width;	// setup for the next row. 
 			}
+			#elif defined(ENABLE_EXT_DMA_UPDATES)
+
+			maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
+			for (uint16_t y = _displayclipy1; y < _displayclipy2; y++) {
+				RAFB * pfbPixel = pfbPixel_row;
+				for (uint16_t x = _displayclipx1; x < (_displayclipx2-1); x++) {
+					_pimxrt_spi->TDR = *pfbPixel++;
+					_pending_rx_count++;	//
+					waitFifoNotFull();
+				}
+				if (y < (_displayclipy2-1)) {
+					_pimxrt_spi->TDR = *pfbPixel;
+					_pending_rx_count++;	//
+					waitFifoNotFull();
+				} else {
+					maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23));
+					_pimxrt_spi->TDR = *pfbPixel;
+					_pending_rx_count++;	//
+					waitTransmitComplete();
+
+				}	
+				pfbPixel_row += _width;	// setup for the next row. 
+			}
+
 			#else
 			for (uint16_t y = _displayclipy1; y < _displayclipy2; y++) {
 				RAFB * pfbPixel = pfbPixel_row;
@@ -1020,6 +1061,7 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 #ifdef ILI9488_USES_PALLET
 				uint8_t color_index = *pfbPixel++;
 				*pcolors++ = _colors_are_index? color_index : _pallet[color_index];
+#elif defined(ENABLE_EXT_DMA_UPDATES)
 #else
 				*pcolors++ = *pfbPixel++;
 #endif				
@@ -1724,6 +1766,7 @@ void ILI9488_t3::begin(uint32_t clock)
 				//spi_port= &SPI;
 				uint32_t *pa = (uint32_t*)((void*)spi_port);
 				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+				_spi_num = 0;
 				_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
 			}
 			Serial.println("ILI9488_t3n: (T4) SPI automatically selected");
@@ -1734,6 +1777,7 @@ void ILI9488_t3::begin(uint32_t clock)
 					//spi_port= &SPI;
 					uint32_t *pa = (uint32_t*)((void*)spi_port);
 					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+					_spi_num = 1;
 					_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
 				}
 				Serial.println("ILI9488_t3n: (T4) SPI1 automatically selected");
@@ -1742,6 +1786,7 @@ void ILI9488_t3::begin(uint32_t clock)
 					//spi_port= &SPI;
 					uint32_t *pa = (uint32_t*)((void*)spi_port);
 					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+					_spi_num = 2;
 					_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
 				}
 				Serial.println("ILI9488_t3n: (T4) SPI2 automatically selected");
@@ -4121,11 +4166,33 @@ void ILI9488_t3::resetScrollBackgroundColor(uint16_t color){
 // DMA - Async support
 //=============================================================================
 #ifdef ENABLE_ILI9488_FRAMEBUFFER
+
+#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+void ILI9488_t3::dmaInterrupt(void) {
+	if (_dmaActiveDisplay[0])  {
+		_dmaActiveDisplay[0]->process_dma_interrupt();
+	}
+}
+void ILI9488_t3::dmaInterrupt1(void) {
+	if (_dmaActiveDisplay[1])  {
+		_dmaActiveDisplay[1]->process_dma_interrupt();
+	}
+}
+void ILI9488_t3::dmaInterrupt2(void) {
+	if (_dmaActiveDisplay[2])  {
+		_dmaActiveDisplay[2]->process_dma_interrupt();
+	}
+}
+
+
+#else
 void ILI9488_t3::dmaInterrupt(void) {
 	if (_dmaActiveDisplay)  {
 		_dmaActiveDisplay->process_dma_interrupt();
 	}
 }
+#endif
+
 #endif
 
 #ifdef DEBUG_ASYNC_UPDATE
@@ -4137,7 +4204,45 @@ extern void dumpDMA_TCD(DMABaseClass *dmabc);
 #if defined(__IMXRT1052__) || defined(__IMXRT1062__) || defined(__MK66FX1M0__)
 // T3.6 and T4 processing
 void ILI9488_t3::process_dma_interrupt(void) {
+#if defined(ENABLE_EXT_DMA_UPDATES)
+//-----------------------------------------------
+// Frame buffer is in DMA memory format 
+//---------------------------------------------------	
+	_dma_frame_count++;
+	_dmatx.clearInterrupt();
 
+	// See if we are in continuous mode or not..
+	if ((_dma_state & ILI9488_DMA_CONT) == 0) {
+		// We are in single refresh mode or the user has called cancel so
+		// Lets try to release the CS pin
+		//Serial.printf("Before FSR wait: %x %x\n", _pimxrt_spi->FSR, _pimxrt_spi->SR);
+		while (_pimxrt_spi->FSR & 0x1f)  ;	// wait until this one is complete
+
+		//Serial.printf("Before SR busy wait: %x\n", _pimxrt_spi->SR);
+		while (_pimxrt_spi->SR & LPSPI_SR_MBF)  ;	// wait until this one is complete
+
+		_dmatx.clearComplete();
+		//Serial.println("Restore FCR");
+		_pimxrt_spi->FCR = LPSPI_FCR_TXWATER(15); // _spi_fcr_save;	// restore the FSR status... 
+			_pimxrt_spi->DER = 0;		// DMA no longer doing TX (or RX)
+
+		_pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
+		_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
+
+		maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));	// output Command with 8 bits
+		// Serial.printf("Output NOP (SR %x CR %x FSR %x FCR %x %x TCR:%x)\n", _pimxrt_spi->SR, _pimxrt_spi->CR, _pimxrt_spi->FSR, 
+		//	_pimxrt_spi->FCR, _spi_fcr_save, _pimxrt_spi->TCR);
+		writecommand_last(ILI9488_NOP);
+		endSPITransaction();
+		_dma_state &= ~ILI9488_DMA_ACTIVE;
+		_dmaActiveDisplay[_spi_num]  = 0;	// We don't have a display active any more... 
+	}
+	
+	asm("dsb");
+#else
+//-----------------------------------------------
+// Build DMA output buffers from Frame buffer mode... 
+//---------------------------------------------------	
 #ifdef DEBUG_ASYNC_LEDS
 	digitalWriteFast(DEBUG_PIN_2, HIGH);
 #endif
@@ -4214,6 +4319,7 @@ void ILI9488_t3::process_dma_interrupt(void) {
 #endif
 	_dmatx.clearInterrupt();
 	asm("dsb");
+#endif	
 }
 
 
@@ -4275,6 +4381,40 @@ void	ILI9488_t3::initDMASettings(void)
 
 	// T3.6 and T4... 
 #if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	#if defined(ENABLE_EXT_DMA_UPDATES)
+	//=============================================
+	// Storing data in 32 bits so can do direct DMAsss
+	//=============================================
+	// 320*480/5 = 30720
+	_dmasettings[0].sourceBuffer(_pfbtft, (COUNT_WORDS_WRITE)*4);
+	_dmasettings[0].destination(_pimxrt_spi->TDR);
+	// _dmasettings[0].TCD->ATTR_DST = 1;  // Will do 32 bit writes
+	_dmasettings[0].replaceSettingsOnCompletion(_dmasettings[1]);
+
+	_dmasettings[1].sourceBuffer(&_pfbtft[COUNT_WORDS_WRITE], COUNT_WORDS_WRITE*4);
+	_dmasettings[1].destination(_pimxrt_spi->TDR);
+	//_dmasettings[1].TCD->ATTR_DST = 1;
+	_dmasettings[1].replaceSettingsOnCompletion(_dmasettings[2]);
+
+	_dmasettings[2].sourceBuffer(&_pfbtft[COUNT_WORDS_WRITE*2], COUNT_WORDS_WRITE*4);
+	_dmasettings[2].destination(_pimxrt_spi->TDR);
+	//_dmasettings[2].TCD->ATTR_DST = 1;
+	_dmasettings[2].replaceSettingsOnCompletion(_dmasettings[3]);
+
+	_dmasettings[3].sourceBuffer(&_pfbtft[COUNT_WORDS_WRITE*3], COUNT_WORDS_WRITE*4);
+	_dmasettings[3].destination(_pimxrt_spi->TDR);
+	//_dmasettings[3].TCD->ATTR_DST = 1;
+	_dmasettings[3].replaceSettingsOnCompletion(_dmasettings[4]);
+
+	_dmasettings[4].sourceBuffer(&_pfbtft[COUNT_WORDS_WRITE*4], COUNT_WORDS_WRITE*4);
+	_dmasettings[4].destination(_pimxrt_spi->TDR);
+	//_dmasettings[4].TCD->ATTR_DST = 1;
+	_dmasettings[4].replaceSettingsOnCompletion(_dmasettings[4]);
+	_dmasettings[4].interruptAtCompletion();
+
+
+	//============================================
+	#else
 	// Now lets setup DMA access to this memory... 
 	// Try to do like T3.6 except not kludge for first word...
 	// Serial.println("DMA initDMASettings - before settings");
@@ -4291,13 +4431,16 @@ void	ILI9488_t3::initDMASettings(void)
 	_dmasettings[1].replaceSettingsOnCompletion(_dmasettings[0]);
 	_dmasettings[1].interruptAtCompletion();
 
+	#endif
 	// Setup DMA main object
 	//Serial.println("Setup _dmatx");
 	// Serial.println("DMA initDMASettings - before dmatx");
 	_dmatx.begin(true);
 	_dmatx.triggerAtHardwareEvent(_spi_hardware->tx_dma_channel);
 	_dmatx = _dmasettings[0];
-	_dmatx.attachInterrupt(dmaInterrupt);
+	if (_spi_num == 0) _dmatx.attachInterrupt(dmaInterrupt);
+	else if (_spi_num == 1) _dmatx.attachInterrupt(dmaInterrupt1);
+	else _dmatx.attachInterrupt(dmaInterrupt2);
 #elif defined(__MK66FX1M0__) 
 	_dmasettings[0].sourceBuffer(&_dma_pixel_buffer0[3], sizeof(_dma_pixel_buffer0)-3);
 	_dmasettings[0].destination(_pkinetisk_spi->PUSHR);
@@ -4405,8 +4548,9 @@ void ILI9488_t3::dumpDMASettings() {
 }
 
 // Fill the pixel buffer with data... 
-#ifdef ENABLE_ILI9488_FRAMEBUFFER
-#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+#if defined( ENABLE_ILI9488_FRAMEBUFFER) &&  !defined(ENABLE_EXT_DMA_UPDATES)
+#if (defined(__IMXRT1052__) || defined(__IMXRT1062__) )  // Teensy 4.x
+
 bool ILI9488_t3::fillDMApixelBuffer(uint32_t *dma_buffer_pointer)
 {
 	RAFB *frame_buffer_pixel_ptr = &_pfbtft[_dma_pixel_index];
@@ -4517,6 +4661,33 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	//==========================================
 	// T4
 	//==========================================
+	#if defined(ENABLE_EXT_DMA_UPDATES)
+	setAddr(0, 0, _width-1, _height-1);
+	writecommand_last(ILI9488_RAMWR);
+	_spi_fcr_save = _pimxrt_spi->FCR;	// remember the FCR
+	_pimxrt_spi->FCR = 0;	// clear water marks... 	
+	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_RXMSK /*| LPSPI_TCR_CONT*/);
+ 	_pimxrt_spi->DER = LPSPI_DER_TDDE;
+	_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
+
+  	//_dmatx.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_TX );
+
+ 	_dmatx = _dmasettings[0];
+
+  	_dmatx.begin(false);
+  	_dmatx.enable();
+
+	_dmaActiveDisplay[_spi_num]  = this;
+	if (update_cont) {
+		_dma_state |= ILI9488_DMA_CONT;
+	} else {
+		_dma_state &= ~ILI9488_DMA_CONT;
+		_dmasettings[4].disableOnCompletion();
+	}
+
+	_dma_state |= ILI9488_DMA_ACTIVE;
+	#else
+	//====================================
 	setAddr(0, 0, _width-1, _height-1);
 	fillDMApixelBuffer(_dma_pixel_buffer0);  // Fill the first buffer
 	writecommand_last(ILI9488_RAMWR);
@@ -4537,6 +4708,17 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
   	_dmatx.begin(false);
   	_dmatx.enable();
 	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
+
+	_dmaActiveDisplay[_spi_num]  = this;
+	if (update_cont) {
+		_dma_state |= ILI9488_DMA_CONT;
+	} else {
+		_dma_state &= ~ILI9488_DMA_CONT;
+
+	}
+
+	_dma_state |= ILI9488_DMA_ACTIVE;
+	#endif
 #elif defined(__MK66FX1M0__) 
 	//==========================================
 	// T3.6
@@ -4557,6 +4739,15 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	_dmatx.enable();
 	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
 
+	_dmaActiveDisplay = this;
+	if (update_cont) {
+		_dma_state |= ILI9488_DMA_CONT;
+	} else {
+		_dma_state &= ~ILI9488_DMA_CONT;
+
+	}
+
+	_dma_state |= ILI9488_DMA_ACTIVE;
 #elif defined(__MK64FX512__)
 	//==========================================
 	// T3.5
@@ -4579,12 +4770,6 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	_dmatx.enable();
 	fillDMApixelBuffer(_dma_pixel_buffer1); 	// fill the second one
 
-#endif	
-#ifdef DEBUG_ASYNC_LEDS
-	digitalWriteFast(DEBUG_PIN_1, LOW);
-#endif
-
-
 	_dmaActiveDisplay = this;
 	if (update_cont) {
 		_dma_state |= ILI9488_DMA_CONT;
@@ -4594,6 +4779,12 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	}
 
 	_dma_state |= ILI9488_DMA_ACTIVE;
+#endif	
+#ifdef DEBUG_ASYNC_LEDS
+	digitalWriteFast(DEBUG_PIN_1, LOW);
+#endif
+
+
 	return true;
     #else
     return false;     // no frame buffer so will never start... 
@@ -4606,6 +4797,9 @@ void ILI9488_t3::endUpdateAsync() {
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_dma_state & ILI9488_DMA_CONT) {
 		_dma_state &= ~ILI9488_DMA_CONT; // Turn of the continueous mode
+		#if defined(ENABLE_EXT_DMA_UPDATES)
+		_dmasettings[4].disableOnCompletion();
+		#endif
 	}
 	#endif
 }

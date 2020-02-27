@@ -71,8 +71,13 @@ typedef uint8_t RAFB;
 #define ENABLE_ILI9488_FRAMEBUFFER
 // define ILI9488_USES_PALLET if you wish to force T4 to use 8 bit buffer instead of 16 bit
 //#define ILI9488_USES_PALLET
+#ifdef ARDUINO_TEENSY41
+#define ENABLE_EXT_DMA_UPDATES
+#endif
 #ifdef ILI9488_USES_PALLET
 typedef uint8_t RAFB;
+#elif defined(ENABLE_EXT_DMA_UPDATES)
+typedef uint32_t RAFB;
 #else
 typedef uint16_t RAFB;
 #endif
@@ -449,6 +454,21 @@ class ILI9488_t3 : public Print
 			if (_pallet && _colors_are_index) return (uint8_t)color;
 			return doActualConvertColorToIndex(color);		
 		}
+#elif defined(ENABLE_EXT_DMA_UPDATES)
+	uint16_t *getPallet() {return nullptr; }
+	void	colorsArePalletIndex(boolean b) {;}
+	boolean	colorsArePalletIndex() {return true;}
+	inline uint32_t mapColorToPalletIndex(uint16_t color) { 
+		  // convert 565 to 666 format. 
+		  uint8_t r = (color & 0xF800) >> 11;
+		  uint8_t g = (color & 0x07E0) >> 5;
+		  uint8_t b = color & 0x001F;
+
+		  r = (r * 255) / 31;
+		  g = (g * 255) / 63;
+		  b = (b * 255) / 31;
+		  return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+		}
 #else
 	// not using pallet
 	uint16_t *getPallet() {return nullptr; }
@@ -494,6 +514,7 @@ class ILI9488_t3 : public Print
  	uint32_t				_clock;
     SPIClass                *spi_port;
 	SPIClass::SPI_Hardware_t *_spi_hardware;
+  	uint8_t   				_spi_num;         	// Which buss is this spi on? 
     //uint32_t                _spi_port_memorymap = 0;
 #if defined(KINETISK)
  	KINETISK_SPI_t *_pkinetisk_spi;
@@ -565,6 +586,7 @@ class ILI9488_t3 : public Print
 	uint8_t _miso, _mosi, _sclk;
 	// add support to allow only one hardware CS (used for dc)
 #if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
+	
     uint32_t _cspinmask;
     volatile uint32_t *_csport;
     uint32_t _spi_tcr_current;
@@ -600,9 +622,13 @@ class ILI9488_t3 : public Print
     boolean		_colors_are_index;				// are the values passed in index or color?
 #endif
     // Add DMA support. 
+	#if defined(__IMXRT1062__)  // Teensy 4.x
+	static  ILI9488_t3 		*_dmaActiveDisplay[3];  // Use pointer to this as a way to get back to object...
+	#else
 	static  ILI9488_t3 		*_dmaActiveDisplay;  // Use pointer to this as a way to get back to object...
-	static volatile uint8_t  	_dma_state;  		// DMA status
-	static volatile uint32_t	_dma_frame_count;	// Can return a frame count...
+	#endif
+	volatile uint8_t  	_dma_state;  		// DMA status
+	volatile uint32_t	_dma_frame_count;	// Can return a frame count...
 
 	// T3.6
 	#if defined(__MK66FX1M0__) 
@@ -625,16 +651,25 @@ class ILI9488_t3 : public Print
 
 	#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x
 	// Going to try it similar to T4.
+	#if defined(ENABLE_EXT_DMA_UPDATES)
+	#define SCREEN_DMA_NUM_SETTINGS 5 // see if making it a constant value makes difference...
+	DMASetting   		_dmasettings[6];
+	DMAChannel  		_dmatx;
+	#else
 	static DMASetting 	_dmasettings[2];
 	static DMAChannel  	_dmatx;
-	uint32_t 			_spi_fcr_save;		// save away previous FCR register value
+
 	bool fillDMApixelBuffer(uint32_t *buffer_ptr);
 
 	uint32_t _dma_pixel_buffer0[DMA_PIXELS_OUTPUT_PER_DMA] __attribute__ ((aligned(4)));
 	uint32_t _dma_pixel_buffer1[DMA_PIXELS_OUTPUT_PER_DMA] __attribute__ ((aligned(4)));
 
+	#endif
+	uint32_t 			_spi_fcr_save;		// save away previous FCR register value
 	#endif	
 	static void dmaInterrupt(void);
+	static void dmaInterrupt1(void);
+	static void dmaInterrupt2(void);
 	void process_dma_interrupt(void);
 	static volatile uint32_t _dma_pixel_index;
 	static volatile uint16_t	_dma_sub_frame_count;	// Can return a frame count...
@@ -1016,6 +1051,9 @@ class ILI9488_t3 : public Print
 // Warning the implemention of class needs to be here, else the code
 // compiled in the c++ file will cause duplicate defines in the link phase. 
 //#ifndef _ADAFRUIT_GFX_H
+#ifdef Adafruit_GFX_Button
+#undef Adafruit_GFX_Button
+#endif
 #define Adafruit_GFX_Button ILI9488_Button
 class ILI9488_Button {
 public:
