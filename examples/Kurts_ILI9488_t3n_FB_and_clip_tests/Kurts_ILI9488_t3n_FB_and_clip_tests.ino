@@ -5,69 +5,44 @@
 #include <Fonts/FreeMonoBoldOblique12pt7b.h>
 #include <Fonts/FreeSerif12pt7b.h>
 
+#define TRY_EXTMEM
+
 #define ROTATION 3
 
 #include "SPI.h"
-#if defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x 
-#define TFT_DC  9  // only CS pin 
-#define TFT_CS 10   // using standard pin
-#define TFT_RST 8
-ILI9488_t3 tft = ILI9488_t3(&SPI,TFT_CS, TFT_DC, 8);
-#define DBGSerial Serial
+
+#define USE_SPI1
+#if defined(USE_SPI1)
+#if defined(__IMXRT1062__)  // Teensy 4.x 
+#define TFT_DC 2
+#define TFT_CS  0
+#define TFT_RST 3
+
+#define TFT_SCK 27
+#define TFT_MISO 1
+#define TFT_MOSI 26
+
 #else
-#define DEFAULT_PINS
-//#define USE_SPI1
-//#define KURTS_FLEXI
-//#define FRANKS_C64
-
-#ifdef KURTS_FLEXI
-#define TFT_DC 22
-#define TFT_CS 15
-#define TFT_RST -1
-#define TFT_SCK 14
-#define TFT_MISO 12
-#define TFT_MOSI 7
-#define DEBUG_PIN 13
-
-#elif defined(FRANKS_C64)
-#define SCK       14
-#define MISO      39
-#define MOSI      28
-#define TFT_TOUCH_CS    38
-#define TFT_TOUCH_INT   37
-#define TFT_DC          20
-#define TFT_CS          21
-#define TFT_RST        -1  // 255 = unused, connected to 3.3V
-#define TFT_SCK        SCK
-#define TFT_MOSI        MOSI
-#define TFT_MISO        MISO
-
-#elif defined(DEFAULT_PINS)
-#define TFT_DC  9  // only CS pin 
-#define TFT_CS 10   // using standard pin
-#define TFT_RST 8
-ILI9488_t3 tft = ILI9488_t3(&SPI,TFT_CS, TFT_DC, 8);
-#define DBGSerial Serial
-
-#elif defined(USE_SPI1)
 #define TFT_DC 31
 #define TFT_CS 10 // any pin will work not hardware
 #define TFT_RST 8
 #define TFT_SCK 32
 #define TFT_MISO 5
 #define TFT_MOSI 21
-#define DEBUG_PIN 13
-#else
-//#define TFT_DC  9
-#define TFT_DC 45
-#define TFT_CS 10
-#define TFT_RST 7
-#define TFT_SCK 13
-#define TFT_MISO 12
-#define TFT_MOSI 11
+//#define DEBUG_PIN 13
 #endif
-//ILI9488_t3n tft = ILI9488_t3n(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO, &SPIN);
+ILI9488_t3 tft = ILI9488_t3(&SPI1, TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO);
+
+//------------------------------------
+#else // default pins
+#define TFT_DC  9  // only CS pin 
+#define TFT_CS 10   // using standard pin
+#define TFT_RST 8
+ILI9488_t3 tft = ILI9488_t3(&SPI, TFT_CS, TFT_DC, TFT_RST);
+//--------------------------------------
 #endif
+
+#define DBGSerial Serial
 
 uint16_t our_pallet[] = {
   ILI9488_BLACK,  ILI9488_RED, ILI9488_GREEN,  ILI9488_BLUE,   ILI9488_WHITE,
@@ -77,17 +52,29 @@ uint16_t our_pallet[] = {
 Adafruit_GFX_Button button;
 
 // Let's allocate the frame buffer ourself.
+// BUGBUG: IF RAFB is 4 this won't fit
+#if ! defined(ENABLE_EXT_DMA_UPDATES)
 DMAMEM RAFB tft_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
+#endif
 
+#ifdef TRY_EXTMEM
 #if defined(ARDUINO_TEENSY41)
 #include <extRAM_t4.h>
 extRAM_t4 ext_mem;
-EXTMEM RAFB extmem_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
-uint8_t use_extmem = 0;
-
+#else
+#undef TRY_EXTMEM
+#if defined(ENABLE_EXT_DMA_UPDATES)
+#error "This Version only works with External memory"
+#endif
+#endif
 #endif
 
 
+#ifdef TRY_EXTMEM
+EXTMEM RAFB extmem_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
+#endif
+
+uint8_t use_extmem = 0;
 uint8_t use_dma = 0;
 uint8_t use_clip_rect = 0;
 uint8_t use_set_origin = 0;
@@ -100,11 +87,15 @@ uint8_t use_fb = 0;
 void setup() {
   while (!Serial && (millis() < 4000)) ;
   DBGSerial.begin(115200);
-  //DBGSerial.printf("Begin: CS:%d, DC:%d, MOSI:%d, MISO: %d, SCK: %d, RST: %d\n", TFT_CS, TFT_DC, TFT_MOSI, TFT_MISO, TFT_SCK, TFT_RST);
+  DBGSerial.printf("Begin: CS:%d, DC:%dRST: %d\n", TFT_CS, TFT_DC, TFT_RST);
+  DBGSerial.printf("  Size of RAFB: %d\n", sizeof(RAFB));
+  tft.begin(26000000);
 
-  tft.begin();
+#if defined(ENABLE_EXT_DMA_UPDATES)
+  tft.setFrameBuffer(extmem_frame_buffer);
+#else
   tft.setFrameBuffer(tft_frame_buffer);
-
+#endif
   tft.setRotation(ROTATION);
   tft.fillScreen(ILI9488_BLACK);
 
@@ -124,10 +115,11 @@ void setup() {
 #endif
 
   button.initButton(&tft, 200, 125, 100, 40, ILI9488_GREEN, ILI9488_YELLOW, ILI9488_RED, "UP", 1, 1);
-#if defined(ARDUINO_TEENSY41)
-  ext_mem.begin();
+  DBGSerial.println("Just before frist draw Test Screen");
+#ifdef TRY_EXTMEM
+  ext_mem.eramBegin();
   testEXTMem();
-#endif  
+#endif
 
   drawTestScreen();
 }
@@ -237,13 +229,13 @@ void drawTestScreen() {
 #endif
 
   tft.readRect(0, 0, 50, 50, pixel_data);
-  // For heck of it lets make sure readPixel and ReadRect 
+  // For heck of it lets make sure readPixel and ReadRect
   // give us same data, maybe check along diagnal?
-  for (uint i=0; i < 50; i++) {
-    uint16_t pixel_color = tft.readPixel(i,i);
-    if (pixel_color != pixel_data[i*50+i]) {
-      DBGSerial.printf("Read rect/pixel mismatch: %d %x %x\n", i, pixel_color,pixel_data[i*50+i]);
-    }    
+  for (uint i = 0; i < 50; i++) {
+    uint16_t pixel_color = tft.readPixel(i, i);
+    if (pixel_color != pixel_data[i * 50 + i]) {
+      DBGSerial.printf("Read rect/pixel mismatch: %d %x %x\n", i, pixel_color, pixel_data[i * 50 + i]);
+    }
   }
 
 #ifdef DEBUG_PIN
@@ -341,7 +333,7 @@ void printTextSizes(const char *sz) {
   int16_t x, y;
   uint16_t w, h;
   tft.getTextBounds(sz, tft.getCursorX(), tft.getCursorY(), &x, &y, &w, &h);
-  Serial.printf(" Rect(%d, %d, %u %u)\n", x, y, w, h);  
+  Serial.printf(" Rect(%d, %d, %u %u)\n", x, y, w, h);
   tft.drawRect(x, y, w, h, ILI9488_GREEN);
 }
 
@@ -377,14 +369,14 @@ void drawTextScreen(bool fOpaque) {
   printTextSizes("FreeSan12");
   tft.println("FreeSan12q");
   tft.setFont();
-  tft.setTextSize(1,2);
+  tft.setTextSize(1, 2);
   printTextSizes("Sys(1,2)");
   tft.println("Sys(1,2)");
   tft.setTextSize(1);
   printTextSizes("System");
   tft.println("System");
   tft.setTextSize(1);
- 
+
 
   tft.updateScreen();
   DBGSerial.printf("Use FB: %d OP: %d, DT: %d OR: %d\n", use_fb, fOpaque, use_set_origin, millis() - start_time);
@@ -432,7 +424,7 @@ void testDMAContUpdate(bool fCont) {
     for (int i = 0; i < (ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT); i++)
     {
       if (*pw != ILI9488_GREEN) {
-        DBGSerial.printf("tft.fillScreen(ILI9488_GREEN) not green? %d != %x\n", i, *pw);
+        if (error_count < 10) DBGSerial.printf("tft.fillScreen(ILI9488_GREEN) not green? %d %x != %x\n", i, *pw, ILI9488_GREEN);
         error_count++;
       }
       pw++;
@@ -521,7 +513,8 @@ void loop(void) {
       else DBGSerial.println("DMA turned off");
       return;
     }
-#if defined(ARDUINO_TEENSY41)
+#ifdef TRY_EXTMEM
+#if ! defined(ENABLE_EXT_DMA_UPDATES)
     if (ich == 'e') {
       use_extmem = !use_extmem;
       if (use_extmem) {
@@ -534,7 +527,7 @@ void loop(void) {
       return;
     }
 #endif
-
+#endif
     if (ich == 's') {
       use_set_origin = !use_set_origin;
       if (use_set_origin) DBGSerial.printf("Set origin to %d, %d\n", ORIGIN_TEST_X, ORIGIN_TEST_Y);
@@ -568,7 +561,7 @@ void drawTextScreen1(bool fOpaque) {
   tft.useFrameBuffer(use_fb);
   tft.fillScreen(use_fb ? ILI9488_RED : ILI9488_BLACK);
   tft.setFont(Arial_28_Bold);
-//t  tft.setFont(Arial_40_Bold);
+  //t  tft.setFont(Arial_40_Bold);
   if (fOpaque)
     tft.setTextColor(ILI9488_WHITE, use_fb ? ILI9488_BLACK : ILI9488_RED);
   else
@@ -587,7 +580,7 @@ void drawTextScreen1(bool fOpaque) {
 #endif
   tft.setFont(&FreeMonoBoldOblique12pt7b);
   printTextSizes("AdaFruit_MB_12");
-  if (fOpaque){
+  if (fOpaque) {
     tft.setTextColor(ILI9488_RED, ILI9488_BLUE);
     tft.print("A");
     tft.setTextColor(ILI9488_WHITE, ILI9488_GREEN);
@@ -623,27 +616,34 @@ void drawTextScreen1(bool fOpaque) {
   printTextSizes("FreeSan12");
   tft.println("FreeSan12");
   tft.println();
-  tft.setTextSize(1,3);
+  tft.setTextSize(1, 3);
   printTextSizes("Size 1,3");
   tft.println("Size 1,3");
   tft.setFont();
   tft.setCursor(0, 190);
-  tft.setTextSize(1,2);
+  tft.setTextSize(1, 2);
   printTextSizes("Sys(1,2)");
   tft.println("Sys(1,2)");
   tft.setTextSize(1);
   printTextSizes("System");
   tft.println("System");
   tft.setTextSize(1);
- 
+
 
   tft.updateScreen();
   DBGSerial.printf("Use FB: %d OP: %d, DT: %d OR: %d\n", use_fb, fOpaque, use_set_origin, millis() - start_time);
 }
 
-#if defined(ARDUINO_TEENSY41)
+#ifdef TRY_EXTMEM
 void  testEXTMem() {
+#if defined(ENABLE_EXT_DMA_UPDATES)
   elapsedMicros em;
+  em = 0;
+  tft.setFrameBuffer(extmem_frame_buffer);
+  tft.fillScreen(ILI9488_RED);
+  tft.updateScreen();
+  DBGSerial.printf("EXT(%x) %d\n",  (uint32_t)extmem_frame_buffer, (uint32_t)em);
+#else
   tft.useFrameBuffer(true);
   // Lets see DMAMEM versus EXTMEM
   for (uint8_t i = 0; i < 5; i++) {
@@ -663,6 +663,6 @@ void  testEXTMem() {
   WaitForUserInput();
   tft.useFrameBuffer(false);
   tft.setFrameBuffer(tft_frame_buffer);
-
+#endif
 }
 #endif

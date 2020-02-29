@@ -544,7 +544,7 @@ void ILI9488_t3::drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
 		RAFB * pfbPixel = &_pfbtft[ y*_width + x];
-		uint16_t color_index = mapColorToPalletIndex(color);
+		RAFB color_index = mapColorToPalletIndex(color);
 		while (h--) {
 			*pfbPixel = color_index;
 			pfbPixel += _width;
@@ -573,7 +573,7 @@ void ILI9488_t3::drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint16_t color_index = mapColorToPalletIndex(color);
+		RAFB color_index = mapColorToPalletIndex(color);
 		RAFB * pfbPixel = &_pfbtft[ y*_width + x];
 		while (w--) {
 			*pfbPixel++ = color_index;
@@ -610,7 +610,7 @@ void ILI9488_t3::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
 
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_use_fbtft) {
-		uint16_t color_index = mapColorToPalletIndex(color);
+		RAFB color_index = mapColorToPalletIndex(color);
 		//if (x==0 && y == 0) Serial.printf("fillrect %x %x %x\n", color, color_index, _pallet[color_index]);
 		//if (1 || (x&3) || (w&3)) {
 			RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
@@ -1143,6 +1143,30 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 #ifdef ILI9488_USES_PALLET
 				uint16_t color_index = *pfbPixel++;
 				*pcolors++ = _colors_are_index? color_index : _pallet[color_index];
+#elif defined(ENABLE_EXT_DMA_UPDATES)
+				// convert 666 to 565 Note: it is actually stored as 3 bytes with 6 pixels of color per byte
+				uint16_t color = (*pfbPixel >> 1) & 0x001f;	// gets the 5b
+				color |= ((*pfbPixel >> 3) 		  & 0x07e0); 		// Should get us the 6G 
+				color |= ((*pfbPixel >> 6) 		  & 0xf800);		   // should add on the 5R to top
+				*pcolors++ = color;
+				#if 0
+				static uint8_t debug_output_count = 0;
+				static uint32_t color_converted[10];
+				if (debug_output_count < 10) {
+					// See if this color has been converted again.
+					uint8_t i;
+					for (i= 0; i < debug_output_count; i++) {
+						if (color_converted[i] == *pfbPixel) break;
+					}
+					if (i == debug_output_count) {
+						Serial.printf("\n>>>Convert 666(%x) to 565(%x)\n", *pfbPixel, color);
+						color_converted[debug_output_count] = *pfbPixel;
+						debug_output_count++;
+					}
+				}
+				#endif
+				pfbPixel++;
+
 #else
 				*pcolors++ = *pfbPixel++;
 #endif				
@@ -2123,7 +2147,11 @@ void ILI9488_t3::drawLine(int16_t x0, int16_t y0,
 		ystep = -1;
 	}
 
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+  	if (!_use_fbtft) beginSPITransaction();
+  	#else
 	beginSPITransaction();
+  	#endif
 	int16_t xbegin = x0;
 	if (steep) {
 		for (; x0<=x1; x0++) {
@@ -2163,20 +2191,37 @@ void ILI9488_t3::drawLine(int16_t x0, int16_t y0,
 			HLine(xbegin, y0, x0 - xbegin, color);
 		}
 	}
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+  	if (!_use_fbtft)  {
+		writecommand_last(ILI9488_NOP);
+		endSPITransaction();
+  	}
+  	#else
 	writecommand_last(ILI9488_NOP);
 	endSPITransaction();
+  	#endif
 }
 
 // Draw a rectangle
 void ILI9488_t3::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
 {
-	beginSPITransaction();
-	HLine(x, y, w, color);
-	HLine(x, y+h-1, w, color);
-	VLine(x, y, h, color);
-	VLine(x+w-1, y, h, color);
-	writecommand_last(ILI9488_NOP);
-	endSPITransaction();
+	#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	if (_use_fbtft) {
+		drawFastHLine(x, y, w, color);
+		drawFastHLine(x, y+h-1, w, color);
+		drawFastVLine(x, y, h, color);
+		drawFastVLine(x+w-1, y, h, color);
+	} else 
+	#endif
+	{
+		beginSPITransaction();
+		HLine(x, y, w, color);
+		HLine(x, y+h-1, w, color);
+		VLine(x, y, h, color);
+		VLine(x+w-1, y, h, color);
+		writecommand_last(ILI9488_NOP);
+		endSPITransaction();
+	}
 }
 
 // Draw a rounded rectangle
@@ -2508,9 +2553,9 @@ void ILI9488_t3::drawChar(int16_t x, int16_t y, unsigned char c,
 			RAFB * pfbPixel_row = &_pfbtft[ y*_width + x];
 			// lets try to output the values directly...
 			RAFB * pfbPixel;
-			uint8_t bgcolor_index = mapColorToPalletIndex(bgcolor);
-			uint8_t fgcolor_index = mapColorToPalletIndex(fgcolor);
-			uint8_t color_idx;
+			RAFB bgcolor_index = mapColorToPalletIndex(bgcolor);
+			RAFB fgcolor_index = mapColorToPalletIndex(fgcolor);
+			RAFB color_idx;
 			for (yc=0; (yc < 8) && (y < _displayclipy2); yc++) {
 				for (yr=0; (yr < size_y) && (y < _displayclipy2); yr++) {
 					x = x_char_start; 		// get our first x position...
@@ -2925,8 +2970,8 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 		if (_use_fbtft) {
 			RAFB * pfbPixel_row = &_pfbtft[ start_y*_width + start_x];
 			RAFB * pfbPixel;
-			uint16_t textbgcolor_index = mapColorToPalletIndex(textbgcolor);
-			uint16_t textcolor_index = mapColorToPalletIndex(textcolor);
+			RAFB textbgcolor_index = mapColorToPalletIndex(textbgcolor);
+			RAFB textcolor_index = mapColorToPalletIndex(textcolor);
 			int screen_y = start_y;
 			int screen_x;
 
@@ -3643,8 +3688,8 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
 			RAFB * pfbPixel_row = &_pfbtft[ y_start *_width + x_start];
 			// lets try to output the values directly...
 			RAFB * pfbPixel;
-			uint16_t textbgcolor_index = mapColorToPalletIndex(textbgcolor);
-			uint16_t textcolor_index = mapColorToPalletIndex(textcolor);
+			RAFB textbgcolor_index = mapColorToPalletIndex(textbgcolor);
+			RAFB textcolor_index = mapColorToPalletIndex(textcolor);
 			
 			// First lets fill in the top parts above the actual rectangle...
 			while (y_top_fill--) {
@@ -4236,6 +4281,9 @@ void ILI9488_t3::process_dma_interrupt(void) {
 		endSPITransaction();
 		_dma_state &= ~ILI9488_DMA_ACTIVE;
 		_dmaActiveDisplay[_spi_num]  = 0;	// We don't have a display active any more... 
+	} else {
+		// Lets try to flush out memory
+		if ((uint32_t)_pfbtft >= 0x20200000u)  arm_dcache_flush(_pfbtft, CBALLOC);
 	}
 	
 	asm("dsb");
@@ -4409,7 +4457,7 @@ void	ILI9488_t3::initDMASettings(void)
 	_dmasettings[4].sourceBuffer(&_pfbtft[COUNT_WORDS_WRITE*4], COUNT_WORDS_WRITE*4);
 	_dmasettings[4].destination(_pimxrt_spi->TDR);
 	//_dmasettings[4].TCD->ATTR_DST = 1;
-	_dmasettings[4].replaceSettingsOnCompletion(_dmasettings[4]);
+	_dmasettings[4].replaceSettingsOnCompletion(_dmasettings[0]);
 	_dmasettings[4].interruptAtCompletion();
 
 
@@ -4662,6 +4710,12 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	// T4
 	//==========================================
 	#if defined(ENABLE_EXT_DMA_UPDATES)
+	// BUGBUG try first not worry about continueous or not.
+  	// Start off remove disable on completion from both...
+	// it will be the ISR that disables it... 
+	if ((uint32_t)_pfbtft >= 0x20200000u)  arm_dcache_flush(_pfbtft, CBALLOC);
+
+	_dmasettings[4].TCD->CSR &= ~( DMA_TCD_CSR_DREQ);
 	setAddr(0, 0, _width-1, _height-1);
 	writecommand_last(ILI9488_RAMWR);
 	_spi_fcr_save = _pimxrt_spi->FCR;	// remember the FCR
@@ -4875,7 +4929,7 @@ void ILI9488_t3::waitUpdateAsyncComplete(void)
 
 		#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	  	if (_use_fbtft) {
-	  		_pfbtft[y*_width + x] = color;
+	  		_pfbtft[y*_width + x] = mapColorToPalletIndex(color);
 	  		return;
 	  	}
 	  	#endif
