@@ -502,8 +502,10 @@ class ILI9488_t3 : public Print
 	void	dumpDMASettings();
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	uint32_t frameCount() {return _dma_frame_count; }
+	uint8_t	 subFrameCount() { return _dma_sub_frame_count;}
 	boolean	asyncUpdateActive(void)  {return (_dma_state & ILI9488_DMA_ACTIVE);}
 	void	initDMASettings(void);
+	void	setFrameCompleteCB(void (*pcb)(), bool fCallAlsoHalfDone=false);
 	#else
 	uint32_t frameCount() {return 0; }
 	boolean	asyncUpdateActive(void)  {return false;}
@@ -622,13 +624,16 @@ class ILI9488_t3 : public Print
     boolean		_colors_are_index;				// are the values passed in index or color?
 #endif
     // Add DMA support. 
+	void		(*_frame_complete_callback)() = nullptr;
+	bool 		_frame_callback_on_HalfDone = false;
 	#if defined(__IMXRT1062__)  // Teensy 4.x
 	static  ILI9488_t3 		*_dmaActiveDisplay[3];  // Use pointer to this as a way to get back to object...
 	#else
 	static  ILI9488_t3 		*_dmaActiveDisplay;  // Use pointer to this as a way to get back to object...
 	#endif
-	volatile uint8_t  	_dma_state;  		// DMA status
-	volatile uint32_t	_dma_frame_count;	// Can return a frame count...
+	volatile uint8_t  	_dma_state;  			// DMA status
+	volatile uint32_t	_dma_frame_count;		// Can return a frame count...
+	volatile uint16_t	_dma_sub_frame_count;	// Can return a frame count...
 
 	// T3.6
 	#if defined(__MK66FX1M0__) 
@@ -672,7 +677,7 @@ class ILI9488_t3 : public Print
 	static void dmaInterrupt2(void);
 	void process_dma_interrupt(void);
 	static volatile uint32_t _dma_pixel_index;
-	static volatile uint16_t	_dma_sub_frame_count;	// Can return a frame count...
+	//static volatile uint16_t	_dma_sub_frame_count;	// Can return a frame count...
 #endif
 
   void charBounds(char c, int16_t *x, int16_t *y,

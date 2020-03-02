@@ -62,7 +62,7 @@
 #define	COUNT_WORDS_WRITE  ((ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)/SCREEN_DMA_NUM_SETTINGS) // Note I know the divide will give whole number
 #endif
 
-//#define DEBUG_ASYNC_UPDATE
+#define DEBUG_ASYNC_UPDATE
 #if defined(__MK66FX1M0__) 
 DMASetting 	ILI9488_t3::_dmasettings[3];
 DMAChannel 	ILI9488_t3::_dmatx;
@@ -96,7 +96,7 @@ volatile uint8_t  	ILI9488_t3::_dma_state = 0;  // Use pointer to this as a way 
 volatile uint32_t	ILI9488_t3::_dma_frame_count = 0;	// Can return a frame count...
 #endif
 volatile uint32_t 	ILI9488_t3::_dma_pixel_index = 0;
-volatile uint16_t	ILI9488_t3::_dma_sub_frame_count = 0;	// Can return a frame count...
+//volatile uint16_t	ILI9488_t3::_dma_sub_frame_count = 0;	// Can return a frame count...
 
 #endif
 
@@ -198,6 +198,16 @@ void ILI9488_t3::setFrameBuffer(RAFB *frame_buffer)
 	}
 
 	#endif	
+}
+
+void ILI9488_t3::setFrameCompleteCB(void (*pcb)(), bool fCallAlsoHalfDone)
+{
+	_frame_complete_callback = pcb;
+	_frame_callback_on_HalfDone = pcb ? fCallAlsoHalfDone : false;
+
+	noInterrupts();
+	_dma_state &= ~ILI9488_DMA_INIT; // Lets setup  the call backs on next call out
+	interrupts();
 }
 
 uint8_t ILI9488_t3::useFrameBuffer(boolean b)		// use the frame buffer?  First call will allocate
@@ -4253,39 +4263,46 @@ void ILI9488_t3::process_dma_interrupt(void) {
 //-----------------------------------------------
 // Frame buffer is in DMA memory format 
 //---------------------------------------------------	
-	_dma_frame_count++;
 	_dmatx.clearInterrupt();
-
-	// See if we are in continuous mode or not..
-	if ((_dma_state & ILI9488_DMA_CONT) == 0) {
-		// We are in single refresh mode or the user has called cancel so
-		// Lets try to release the CS pin
-		//Serial.printf("Before FSR wait: %x %x\n", _pimxrt_spi->FSR, _pimxrt_spi->SR);
-		while (_pimxrt_spi->FSR & 0x1f)  ;	// wait until this one is complete
-
-		//Serial.printf("Before SR busy wait: %x\n", _pimxrt_spi->SR);
-		while (_pimxrt_spi->SR & LPSPI_SR_MBF)  ;	// wait until this one is complete
-
-		_dmatx.clearComplete();
-		//Serial.println("Restore FCR");
-		_pimxrt_spi->FCR = LPSPI_FCR_TXWATER(15); // _spi_fcr_save;	// restore the FSR status... 
-			_pimxrt_spi->DER = 0;		// DMA no longer doing TX (or RX)
-
-		_pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
-		_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
-
-		maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));	// output Command with 8 bits
-		// Serial.printf("Output NOP (SR %x CR %x FSR %x FCR %x %x TCR:%x)\n", _pimxrt_spi->SR, _pimxrt_spi->CR, _pimxrt_spi->FSR, 
-		//	_pimxrt_spi->FCR, _spi_fcr_save, _pimxrt_spi->TCR);
-		writecommand_last(ILI9488_NOP);
-		endSPITransaction();
-		_dma_state &= ~ILI9488_DMA_ACTIVE;
-		_dmaActiveDisplay[_spi_num]  = 0;	// We don't have a display active any more... 
+	if (_frame_callback_on_HalfDone && (_dmatx.TCD->SADDR > _dmasettings[2].TCD->SADDR)) {
+		_dma_sub_frame_count = 1;	// set as partial frame.
+		if (_frame_complete_callback) (*_frame_complete_callback)();
 	} else {
-		// Lets try to flush out memory
-		if ((uint32_t)_pfbtft >= 0x20200000u)  arm_dcache_flush(_pfbtft, CBALLOC);
-	}
-	
+		_dma_frame_count++;
+		_dma_sub_frame_count = 0;
+
+		// See if we are in continuous mode or not..
+		if ((_dma_state & ILI9488_DMA_CONT) == 0) {
+			// We are in single refresh mode or the user has called cancel so
+			// Lets try to release the CS pin
+			//Serial.printf("Before FSR wait: %x %x\n", _pimxrt_spi->FSR, _pimxrt_spi->SR);
+			while (_pimxrt_spi->FSR & 0x1f)  ;	// wait until this one is complete
+
+			//Serial.printf("Before SR busy wait: %x\n", _pimxrt_spi->SR);
+			while (_pimxrt_spi->SR & LPSPI_SR_MBF)  ;	// wait until this one is complete
+
+			_dmatx.clearComplete();
+			//Serial.println("Restore FCR");
+			_pimxrt_spi->FCR = LPSPI_FCR_TXWATER(15); // _spi_fcr_save;	// restore the FSR status... 
+				_pimxrt_spi->DER = 0;		// DMA no longer doing TX (or RX)
+
+			_pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
+			_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
+
+			maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));	// output Command with 8 bits
+			// Serial.printf("Output NOP (SR %x CR %x FSR %x FCR %x %x TCR:%x)\n", _pimxrt_spi->SR, _pimxrt_spi->CR, _pimxrt_spi->FSR, 
+			//	_pimxrt_spi->FCR, _spi_fcr_save, _pimxrt_spi->TCR);
+			writecommand_last(ILI9488_NOP);
+			endSPITransaction();
+			_dma_state &= ~ILI9488_DMA_ACTIVE;
+			_dmaActiveDisplay[_spi_num]  = 0;	// We don't have a display active any more... 
+		} else {
+			// Lets try to flush out memory
+			// 
+			if (_frame_complete_callback) (*_frame_complete_callback)();
+			else if ((uint32_t)_pfbtft >= 0x20200000u)  arm_dcache_flush(_pfbtft, CBALLOC);
+		}
+	}	
 	asm("dsb");
 #else
 //-----------------------------------------------
@@ -4448,7 +4465,8 @@ void	ILI9488_t3::initDMASettings(void)
 	_dmasettings[2].destination(_pimxrt_spi->TDR);
 	//_dmasettings[2].TCD->ATTR_DST = 1;
 	_dmasettings[2].replaceSettingsOnCompletion(_dmasettings[3]);
-
+	if (_frame_callback_on_HalfDone) _dmasettings[2].interruptAtHalf();
+	else  _dmasettings[2].TCD->CSR &= ~DMA_TCD_CSR_INTHALF;
 	_dmasettings[3].sourceBuffer(&_pfbtft[COUNT_WORDS_WRITE*3], COUNT_WORDS_WRITE*4);
 	_dmasettings[3].destination(_pimxrt_spi->TDR);
 	//_dmasettings[3].TCD->ATTR_DST = 1;
@@ -4850,7 +4868,9 @@ void ILI9488_t3::endUpdateAsync() {
 	// make sure it is on
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	if (_dma_state & ILI9488_DMA_CONT) {
+		noInterrupts();
 		_dma_state &= ~ILI9488_DMA_CONT; // Turn of the continueous mode
+		interrupts();
 		#if defined(ENABLE_EXT_DMA_UPDATES)
 		_dmasettings[4].disableOnCompletion();
 		#endif

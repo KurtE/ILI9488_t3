@@ -420,11 +420,12 @@ void testDMAContUpdate(bool fCont) {
   // check to see if screen memory actually turned green.
   if (use_fb) {
     RAFB *pw = tft.getFrameBuffer();
+    RAFB green_pallet_index = tft.mapColorToPalletIndex(ILI9488_GREEN);
     int error_count = 0;
     for (int i = 0; i < (ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT); i++)
     {
-      if (*pw != ILI9488_GREEN) {
-        if (error_count < 10) DBGSerial.printf("tft.fillScreen(ILI9488_GREEN) not green? %d %x != %x\n", i, *pw, ILI9488_GREEN);
+      if (*pw != green_pallet_index) {
+        if (error_count < 10) DBGSerial.printf("tft.fillScreen(ILI9488_GREEN) not green? %d %x != %x\n", i, *pw, green_pallet_index);
         error_count++;
       }
       pw++;
