@@ -2,6 +2,7 @@
 #include <ILI9488_t3.h>
 
 #define TRY_EXTMEM
+#define UPDATE_HALF_FRAME
 
 #define ROTATION 3
 
@@ -60,7 +61,7 @@ void setup() {
   tft.setFrameBuffer(extmem_frame_buffer);
   tft.setRotation(ROTATION);
   tft.fillScreen(ILI9488_BLACK);
-  ext_mem.eramBegin();
+  ext_mem.begin(0);
   tft.useFrameBuffer(true);
   tft.setCursor(ILI9488_t3::CENTER, ILI9488_t3::CENTER);
   tft.setTextColor(ILI9488_RED);
@@ -93,13 +94,49 @@ void frame_callback() {
   } else if (shutdown_cont_update_count < COUNT_SHUTDOWN_FRAMES) {
     shutdown_cont_update_count--;
   } else {
-    if ((frameCount & 0xf) == 0) {
+#ifdef UPDATE_HALF_FRAME
+    bool draw_frame = false;
+    if (((frameCount & 0xf) == 0) && tft.subFrameCount()) {
+      draw_frame = true;
+      tft.setClipRect(0, 0, tft.width(), tft.height() / 2);
+    } else if (((frameCount & 0xf) == 1) && !tft.subFrameCount()) {
+      draw_frame = true;
+      tft.setClipRect(0, tft.height() / 2, tft.width(), tft.height() / 2);
+    }
+    if (draw_frame)
+#else
+    if (tft.subFrameCount()) {
+      // lets ignore these right now
+      return;
+    }
+    if ((frameCount & 0xf) == 0)
+#endif
+    {
       // First pass ignore subframe...
       uint8_t color_index = (frameCount >> 4) & 0x7;
       tft.fillScreen(our_pallet[color_index]);
       tft.drawRect(5, 5, tft.width() - 10, tft.height() - 10, our_pallet[(color_index + 1) & 7]);
       tft.drawRect(25, 25, tft.width() - 50, tft.height() - 50, our_pallet[(color_index + 2) & 7]);
+
+      static uint8_t display_other = 0;
+      switch (display_other) {
+        case 0:
+          tft.fillRect(50, 50, tft.width() - 100, tft.height() - 100, our_pallet[(color_index + 1) & 7]);
+          break;
+        case 1:
+          tft.fillCircle(tft.width() / 2, tft.height() / 2, 100, our_pallet[(color_index + 1) & 7]);
+          break;
+        case 2:
+          tft.fillTriangle(50, 50, tft.width() - 50, 50, tft.width() / 2, tft.height() - 50, our_pallet[(color_index + 1) & 7]);
+          break;
+      }
+      if (!tft.subFrameCount()) {
+        display_other++;
+        if (display_other > 2) display_other =  0 ;
+      }
+
       arm_dcache_flush(extmem_frame_buffer, sizeof(extmem_frame_buffer));
+      tft.setClipRect();
     }
   }
 
