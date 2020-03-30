@@ -60,9 +60,9 @@ void setup() {
 
   tft.setFrameBuffer(extmem_frame_buffer);
   tft.setRotation(ROTATION);
-  tft.fillScreen(ILI9488_BLACK);
   ext_mem.begin(0);
   tft.useFrameBuffer(true);
+  tft.fillScreen(ILI9488_BLACK);
   tft.setCursor(ILI9488_t3::CENTER, ILI9488_t3::CENTER);
   tft.setTextColor(ILI9488_RED);
   tft.setFont(Arial_20_Bold);
