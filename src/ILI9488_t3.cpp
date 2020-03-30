@@ -270,13 +270,13 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 			}
 			write16BitColor(_pallet[*pftbft], true);
 			#elif defined(ENABLE_EXT_DMA_UPDATES)
-			maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
+			maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
 			while (pftbft < pfbtft_end) {
 				_pimxrt_spi->TDR = *pftbft++;
 				_pending_rx_count++;	//
 				waitFifoNotFull();
 			}
-			maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23));
+			maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23));
 			_pimxrt_spi->TDR = *pftbft;
 			_pending_rx_count++;	//
 			waitTransmitComplete();
@@ -309,7 +309,7 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 			}
 			#elif defined(ENABLE_EXT_DMA_UPDATES)
 
-			maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
+			maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
 			for (uint16_t y = _displayclipy1; y < _displayclipy2; y++) {
 				RAFB * pfbPixel = pfbPixel_row;
 				for (uint16_t x = _displayclipx1; x < (_displayclipx2-1); x++) {
@@ -322,7 +322,7 @@ void ILI9488_t3::updateScreen(void)					// call to say update the screen now.
 					_pending_rx_count++;	//
 					waitFifoNotFull();
 				} else {
-					maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23));
+					maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23));
 					_pimxrt_spi->TDR = *pfbPixel;
 					_pending_rx_count++;	//
 					waitTransmitComplete();
@@ -380,12 +380,12 @@ void ILI9488_t3::write16BitColor(uint16_t color, bool last_pixel){
   b = (b * 255) / 31;
   uint32_t color24 = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
   if (last_pixel)  {
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23));
+	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23));
 	_pimxrt_spi->TDR = color24;
 	_pending_rx_count++;	//
 	waitTransmitComplete();
   } else {
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
+	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
 	_pimxrt_spi->TDR = color24;
 	_pending_rx_count++;	//
 	waitFifoNotFull();
@@ -439,7 +439,7 @@ void ILI9488_t3::write16BitColor(uint16_t color, uint16_t count, bool last_pixel
   b = (b * 255) / 31;
   uint32_t color24 = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
   while (count > 1) {
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
+	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
 	_pimxrt_spi->TDR = color24;
 	_pending_rx_count++;	//
 	waitFifoNotFull();
@@ -447,12 +447,12 @@ void ILI9488_t3::write16BitColor(uint16_t color, uint16_t count, bool last_pixel
   }
 
   if (last_pixel)  {
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23));
+	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23));
 	_pimxrt_spi->TDR = color24;
 	_pending_rx_count++;	//
 	waitTransmitComplete();
   } else {
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
+	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_CONT);
 	_pimxrt_spi->TDR = color24;
 	_pending_rx_count++;	//
 	waitFifoNotFull();
@@ -942,21 +942,21 @@ uint8_t ILI9488_t3::readcommand8(uint8_t c, uint8_t index)
 
     beginSPITransaction(ILI9488_SPICLOCK_READ);
     // Lets assume that queues are empty as we just started transaction.
-	_pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
+	_pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF /*| LPSPI_CR_RTF */;   // actually clear both...
     //writecommand(0xD9); // sekret command
-    maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
+    maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
 	_pimxrt_spi->TDR = 0xD9;
 
     // writedata(0x10 + index);
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
+	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
 	_pimxrt_spi->TDR = 0x10 + index;
 
     // writecommand(c);
-    maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
+    maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
 	_pimxrt_spi->TDR = c;
 
     // readdata
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7));
+	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7));
 	_pimxrt_spi->TDR = 0;
 
     // Now wait until completed.
@@ -1210,7 +1210,7 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 			if (txCount) {
 				_pimxrt_spi->TDR = 0;
 			} else {
-				maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7)); // remove the CONTINUE...
+				maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7)); // remove the CONTINUE...
 				while ((_pimxrt_spi->SR & LPSPI_SR_TDF) == 0) ;		// wait if queue was full
 				_pimxrt_spi->TDR = 0;
 			}
@@ -1867,17 +1867,22 @@ void ILI9488_t3::begin(uint32_t clock)
 
 	// TODO:  Need to setup DC to actually work.
 	if (spi_port->pinIsChipSelect(_dc)) {
-	 	spi_port->setCS(_dc);
+	 	uint8_t dc_cs_index = spi_port->setCS(_dc);
 	 	_dcport = 0;
 	 	_dcpinmask = 0;
+	 	dc_cs_index--;	// convert to 0 based
+		_tcr_dc_assert = LPSPI_TCR_PCS(dc_cs_index);
+    	_tcr_dc_not_assert = LPSPI_TCR_PCS(3);
 	} else {
 		//Serial.println("ILI9488_t3n: Error not DC is not valid hardware CS pin");
 		_dcport = portOutputRegister(_dc);
 		_dcpinmask = digitalPinToBitMask(_dc);
 		pinMode(_dc, OUTPUT);	
 		DIRECT_WRITE_HIGH(_dcport, _dcpinmask);
+		_tcr_dc_assert = LPSPI_TCR_PCS(0);
+    	_tcr_dc_not_assert = LPSPI_TCR_PCS(1);
 	}
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7));
+	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7));
 #elif defined(KINETISL)
 	if ((_mosi != 255) || (_miso != 255) || (_sclk != 255)) {
 		// Lets verify that all of the specifid pins are valid... right now only care about MSOI and sclk... 
@@ -4289,7 +4294,7 @@ void ILI9488_t3::process_dma_interrupt(void) {
 			_pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;   // actually clear both...
 			_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
 
-			maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));	// output Command with 8 bits
+			maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7));	// output Command with 8 bits
 			// Serial.printf("Output NOP (SR %x CR %x FSR %x FCR %x %x TCR:%x)\n", _pimxrt_spi->SR, _pimxrt_spi->CR, _pimxrt_spi->FSR, 
 			//	_pimxrt_spi->FCR, _spi_fcr_save, _pimxrt_spi->TCR);
 			writecommand_last(ILI9488_NOP);
@@ -4345,7 +4350,7 @@ void ILI9488_t3::process_dma_interrupt(void) {
 			_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
 
 
-			maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));	// output Command with 8 bits
+			maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7));	// output Command with 8 bits
 			// Serial.printf("Output NOP (SR %x CR %x FSR %x FCR %x %x TCR:%x)\n", _pimxrt_spi->SR, _pimxrt_spi->CR, _pimxrt_spi->FSR, 
 			//	_pimxrt_spi->FCR, _spi_fcr_save, _pimxrt_spi->TCR);
 #elif defined(__MK66FX1M0__) 
@@ -4738,7 +4743,7 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	writecommand_last(ILI9488_RAMWR);
 	_spi_fcr_save = _pimxrt_spi->FCR;	// remember the FCR
 	_pimxrt_spi->FCR = 0;	// clear water marks... 	
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_RXMSK /*| LPSPI_TCR_CONT*/);
+	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_RXMSK /*| LPSPI_TCR_CONT*/);
  	_pimxrt_spi->DER = LPSPI_DER_TDDE;
 	_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
 
@@ -4767,9 +4772,9 @@ bool ILI9488_t3::updateScreenAsync(bool update_cont)					// call to say update t
 	// Update TCR to 16 bit mode. and output the first entry.
 	_spi_fcr_save = _pimxrt_spi->FCR;	// remember the FCR
 	_pimxrt_spi->FCR = 0;	// clear water marks... 	
-	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_RXMSK /*| LPSPI_TCR_CONT*/);
+	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(23) | LPSPI_TCR_RXMSK /*| LPSPI_TCR_CONT*/);
 //	_pimxrt_spi->CFGR1 |= LPSPI_CFGR1_NOSTALL;
-//	maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
+//	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
  	_pimxrt_spi->DER = LPSPI_DER_TDDE;
 	_pimxrt_spi->SR = 0x3f00;	// clear out all of the other status...
 

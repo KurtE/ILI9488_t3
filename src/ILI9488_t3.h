@@ -595,6 +595,8 @@ class ILI9488_t3 : public Print
     uint32_t _dcpinmask;
     uint8_t _pending_rx_count;
     volatile uint32_t *_dcport;
+    uint32_t _tcr_dc_assert;
+    uint32_t _tcr_dc_not_assert;
 
 #elif defined(KINETISK)
     uint8_t _cspinmask;
@@ -749,6 +751,7 @@ class ILI9488_t3 : public Print
 
 	void beginSPITransaction()  __attribute__((always_inline)) {
 		spi_port->beginTransaction(SPISettings(_clock, MSBFIRST, SPI_MODE0));
+		if (!_dcport) _spi_tcr_current = _pimxrt_spi->TCR; 	// Only if DC is on hardware CS 
 		if (_csport)
 			DIRECT_WRITE_LOW(_csport, _cspinmask);
 	}
@@ -765,39 +768,39 @@ class ILI9488_t3 : public Print
 
 	// BUGBUG:: currently assumming we only have CS_0 as valid CS
 	void writecommand_cont(uint8_t c) __attribute__((always_inline)) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7) /*| LPSPI_TCR_CONT*/);
+		maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7) /*| LPSPI_TCR_CONT*/);
 		_pimxrt_spi->TDR = c;
 		_pending_rx_count++;	//
 		waitFifoNotFull();
 	}
 	void writedata8_cont(uint8_t c) __attribute__((always_inline)) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
+		maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
 		_pimxrt_spi->TDR = c;
 		_pending_rx_count++;	//
 		waitFifoNotFull();
 	}
 	void writedata16_cont(uint16_t d) __attribute__((always_inline)) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
+		maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
 		_pimxrt_spi->TDR = d;
 		_pending_rx_count++;	//
 		waitFifoNotFull();
 	}
 	void writecommand_last(uint8_t c) __attribute__((always_inline)) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(0) | LPSPI_TCR_FRAMESZ(7));
+		maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7));
 		_pimxrt_spi->TDR = c;
 //		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
 		_pending_rx_count++;	//
 		waitTransmitComplete();
 	}
 	void writedata8_last(uint8_t c) __attribute__((always_inline)) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(7));
+		maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7));
 		_pimxrt_spi->TDR = c;
 //		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
 		_pending_rx_count++;	//
 		waitTransmitComplete();
 	}
 	void writedata16_last(uint16_t d) __attribute__((always_inline)) {
-		maybeUpdateTCR(LPSPI_TCR_PCS(1) | LPSPI_TCR_FRAMESZ(15));
+		maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(15));
 		_pimxrt_spi->TDR = d;
 //		_pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
 		_pending_rx_count++;	//
