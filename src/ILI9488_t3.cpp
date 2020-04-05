@@ -92,11 +92,8 @@ ILI9488_t3 *ILI9488_t3::_dmaActiveDisplay[3] = {0, 0, 0};
 #else
 ILI9488_t3 *ILI9488_t3::_dmaActiveDisplay = 0;
 
-volatile uint8_t  	ILI9488_t3::_dma_state = 0;  // Use pointer to this as a way to get back to object...
-volatile uint32_t	ILI9488_t3::_dma_frame_count = 0;	// Can return a frame count...
 #endif
 volatile uint32_t 	ILI9488_t3::_dma_pixel_index = 0;
-//volatile uint16_t	ILI9488_t3::_dma_sub_frame_count = 0;	// Can return a frame count...
 
 #endif
 
@@ -200,6 +197,7 @@ void ILI9488_t3::setFrameBuffer(RAFB *frame_buffer)
 	#endif	
 }
 
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
 void ILI9488_t3::setFrameCompleteCB(void (*pcb)(), bool fCallAlsoHalfDone)
 {
 	_frame_complete_callback = pcb;
@@ -209,6 +207,7 @@ void ILI9488_t3::setFrameCompleteCB(void (*pcb)(), bool fCallAlsoHalfDone)
 	_dma_state &= ~ILI9488_DMA_INIT; // Lets setup  the call backs on next call out
 	interrupts();
 }
+	#endif	
 
 uint8_t ILI9488_t3::useFrameBuffer(boolean b)		// use the frame buffer?  First call will allocate
 {
@@ -4373,8 +4372,11 @@ void ILI9488_t3::process_dma_interrupt(void) {
 			// Serial.println("Do End transaction");
 			endSPITransaction();
 			_dma_state &= ~ILI9488_DMA_ACTIVE;
-			_dmaActiveDisplay = 0;	// We don't have a display active any more... 
-
+			#if defined(__IMXRT1062__)  // Teensy 4.x
+			_dmaActiveDisplay[_spi_num]  = nullptr;
+			#else
+			_dmaActiveDisplay = nullptr;	// We don't have a display active any more... 
+			#endif
 	 		 //Serial.println("After End transaction");
 
 		} else {
