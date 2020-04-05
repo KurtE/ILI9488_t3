@@ -16,34 +16,13 @@
 
 #include "SPI.h"
 #include "ILI9488_t3.h"
-//#define TEENSY64
 
-// For the Adafruit shield, these are the default.
-#if defined(__MK66FX1M0__) && !defined(TEENSY64)
 #define TFT_RST 8
 #define TFT_DC 9
 #define TFT_CS 10
+
 ILI9488_t3 tft = ILI9488_t3(&SPI, TFT_CS, TFT_DC, TFT_RST);
-#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
-// On Teensy 4 beta with Paul's breakout out:
-// Using pins (MOSI, MISO, SCK which are labeled on Audio board breakout location
-// which are not in the Normal processor positions
-// Also DC=10(CS), CS=9(BCLK) and RST 23(MCLK)
-#define TFT_RST 23
-#define TFT_DC 9
-#define TFT_CS 10
-ILI9488_t3 tft = ILI9488_t3(&SPI, TFT_CS, TFT_DC, TFT_RST);
-#elif defined(TEENSY64)
-#define TFT_RST 255
-#define TFT_DC 20
-#define TFT_CS 21
-#define TFT_SCK 14
-#define TFT_MISO 39
-#define TFT_MOSI 28
-ILI9488_t3 tft = ILI9488_t3(&SPI, TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO);
-#else
-#error "This example App will only work with Teensy 3.6 or Teensy 4."
-#endif
+
 void setup() {
   tft.begin();
   tft.fillScreen(ILI9488_BLACK);

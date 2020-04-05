@@ -71,8 +71,10 @@ typedef uint8_t RAFB;
 #define ENABLE_ILI9488_FRAMEBUFFER
 // define ILI9488_USES_PALLET if you wish to force T4 to use 8 bit buffer instead of 16 bit
 //#define ILI9488_USES_PALLET
-#ifdef ARDUINO_TEENSY41
-#define ENABLE_EXT_DMA_UPDATES
+//#define ENABLE_EXT_DMA_UPDATES  // This is only valid for those T4.1 which have external memory. 
+
+#ifndef ARDUINO_TEENSY41
+#undef ENABLE_EXT_DMA_UPDATES
 #endif
 #ifdef ILI9488_USES_PALLET
 typedef uint8_t RAFB;
