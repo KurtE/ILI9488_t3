@@ -1051,8 +1051,8 @@ class ILI9488_t3 : public Print
 	
 	void drawFontBits(bool opaque, uint32_t bits, uint32_t numbits, int32_t x, int32_t y, uint32_t repeat);};
 
-#ifndef swap
-#define swap(a, b) { typeof(a) t = a; a = b; b = t; }
+#ifndef ILI9488_swap
+#define ILI9488_swap(a, b) { typeof(a) t = a; a = b; b = t; }
 #endif
 
 // To avoid conflict when also using Adafruit_GFX or any Adafruit library
