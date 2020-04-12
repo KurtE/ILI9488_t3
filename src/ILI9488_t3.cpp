@@ -3575,8 +3575,10 @@ void ILI9488_t3::drawGFXFontChar(unsigned int c) {
     GFXglyph *glyph  = gfxFont->glyph + (c - first);
     uint8_t   w     = glyph->width,
               h     = glyph->height;
-    if((w == 0) || (h == 0))  return;  // Is there an associated bitmap?
-
+			  
+    // wonder if we should look at xo, yo instead?         
+    if((w == 0 ||  h == 0)  && (c != 32))   return;  // Is there an associated bitmap?
+	
     int16_t xo = glyph->xOffset; // sic
     int16_t yo = glyph->yOffset + gfxFont->yAdvance/2;
 
