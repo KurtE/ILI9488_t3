@@ -48,6 +48,18 @@
 
 #ifndef _ILI9488_t3H_
 #define _ILI9488_t3H_
+#if defined __has_include
+#if __has_include(<extRAM_t4.h>) && defined(ARDUINO_TEENSY41)
+//#include <extRAM_t4.h>
+#define ENABLE_EXT_DMA_UPDATES  // This is only valid for those T4.1 which have external memory. 
+//#pragma message "ILI9488_t3h -  extRAM_T4 enabled EXT DMA frame buffer"
+#endif
+
+#if __has_include(<ILI9488_sketch_options.h>)
+#  include <ILI9488_sketch_options.h>
+//#pragma message "ILI9488_t3h - included ILI9488_sketch_options.h"
+#endif
+#endif
 
 #ifdef __cplusplus
 #include "Arduino.h"
