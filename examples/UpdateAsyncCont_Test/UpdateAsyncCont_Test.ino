@@ -1,3 +1,6 @@
+#include <extRAM_t4.h>
+extRAM_t4 ext_mem;
+
 #include <ili9488_t3_font_ArialBold.h>
 #include <ILI9488_t3.h>
 
@@ -8,7 +11,7 @@
 
 #include "SPI.h"
 
-#define USE_SPI1
+//#define USE_SPI1
 #if defined(USE_SPI1)
 #if defined(__IMXRT1062__)  // Teensy 4.x 
 #define TFT_DC 2
@@ -47,8 +50,7 @@ uint16_t our_pallet[] = {
 #define COUNT_SHUTDOWN_FRAMES 16
 volatile uint8_t shutdown_cont_update_count = 0xff;
 
-#include <extRAM_t4.h>
-extRAM_t4 ext_mem;
+
 EXTMEM RAFB extmem_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
 
 void setup() {
@@ -60,7 +62,7 @@ void setup() {
 
   tft.setFrameBuffer(extmem_frame_buffer);
   tft.setRotation(ROTATION);
-  ext_mem.begin(0);
+  ext_mem.begin();
   tft.useFrameBuffer(true);
   tft.fillScreen(ILI9488_BLACK);
   tft.setCursor(ILI9488_t3::CENTER, ILI9488_t3::CENTER);

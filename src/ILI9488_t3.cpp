@@ -62,7 +62,7 @@
 #define	COUNT_WORDS_WRITE  ((ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH)/SCREEN_DMA_NUM_SETTINGS) // Note I know the divide will give whole number
 #endif
 
-#define DEBUG_ASYNC_UPDATE
+//#define DEBUG_ASYNC_UPDATE
 #if defined(__MK66FX1M0__) 
 DMASetting 	ILI9488_t3::_dmasettings[3];
 DMAChannel 	ILI9488_t3::_dmatx;
@@ -99,6 +99,45 @@ volatile uint32_t 	ILI9488_t3::_dma_pixel_index = 0;
 
 // Constructor when using hardware SPI.  Faster, but must use SPI pins
 // specific to each board type (e.g. 11,13 for Uno, 51,52 for Mega, etc.)
+ILI9488_t3::ILI9488_t3(uint8_t cs, uint8_t dc, uint8_t rst, uint8_t mosi, uint8_t sclk, uint8_t miso)
+{
+	spi_port = nullptr;
+
+	_cs   = cs;
+	_dc   = dc;
+	_rst  = rst;
+	_mosi = mosi;
+	_sclk = sclk;
+	_miso = miso;
+	_width    = WIDTH;
+	_height   = HEIGHT;
+	rotation  = 0;
+	cursor_y  = cursor_x    = 0;
+	cursor_y  = cursor_x    = 0;
+	textsize  = 1;
+	textcolor = textbgcolor = 0xFFFF;
+	wrap      = true;
+	font      = NULL;
+	// Added to see how much impact actually using non hardware CS pin might be
+    _cspinmask = 0;
+    _csport = NULL;
+	
+#ifdef ENABLE_ILI9488_FRAMEBUFFER
+	_use_fbtft = false;
+	_pfbtft = nullptr;
+#ifdef ILI9488_USES_PALLET
+	_pallet = NULL ;	// 
+
+	// Probably should check that it did not fail... 
+	_pallet_size = 0;					// How big is the pallet
+	_pallet_count = 0;					// how many items are in it...
+#endif
+#endif
+	setClipRect();
+	setOrigin();
+	setTextSize(textsize);
+}
+
 ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, uint8_t mosi, uint8_t sclk, uint8_t miso)
 {
 	spi_port = SPIWire;
@@ -133,15 +172,6 @@ ILI9488_t3::ILI9488_t3(SPIClass *SPIWire, uint8_t cs, uint8_t dc, uint8_t rst, u
 	_pallet_count = 0;					// how many items are in it...
 #endif
 #endif
-
- 	uint32_t *pa = (uint32_t*)((void*)spi_port);
-	_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-    #ifdef KINETISK
-	_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
-	_fifo_size = _spi_hardware->queue_size;		// remember the queue size
-	#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)
-	_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
-	#endif
 	setClipRect();
 	setOrigin();
 	setTextSize(textsize);
@@ -1307,7 +1337,8 @@ void ILI9488_t3::readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *
 // Now lets see if we can writemultiple pixels
 void ILI9488_t3::writeRect(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t *pcolors)
 {
-
+	if (x == CENTER) x = (_width - w) / 2;
+	if (y == CENTER) y = (_height - h) / 2;
 	x+=_originx;
 	y+=_originy;
 	uint16_t x_clip_left = 0;  // How many entries at start of colors to skip at start of row
@@ -1667,104 +1698,46 @@ static const uint8_t init_commands[] = {
 
 void ILI9488_t3::begin(uint32_t clock)
 {
+	//Serial.printf("ILI9488_t3::begin - start(%x %d %d %d)\n", (uint32_t)spi_port, _mosi, _miso, _sclk); Serial.flush();
 	_clock = clock;	// remember the passed in clock...
 
     // verify SPI pins are valid;
-    //Serial.printf("::begin %x %x %x %d %d %d\n", (uint32_t)spi_port, (uint32_t)_pkinetisk_spi, (uint32_t)_spi_hardware, _mosi, _miso, _sclk);
-    #ifdef KINETISK
-	/*
-    #if defined(__MK64FX512__) || defined(__MK66FX1M0__)
-    // Allow to work with mimimum of MOSI and SCK
-    if ((_mosi == 255 || _mosi == 11 || _mosi == 7 || _mosi == 28)  && (_sclk == 255 || _sclk == 13 || _sclk == 14 || _sclk == 27)) 
-	#else
-    if ((_mosi == 255 || _mosi == 11 || _mosi == 7) && (_sclk == 255 || _sclk == 13 || _sclk == 14)) 
-    #endif	
-    {
-        
-		if (_mosi != 255) spi_port->setMOSI(_mosi);
-        if (_sclk != 255) spi_port->setSCK(_sclk);
-
-        // Now see if valid MISO
-	    #if defined(__MK64FX512__) || defined(__MK66FX1M0__)
-	    if (_miso == 12 || _miso == 8 || _miso == 39)
-		#else
-	    if (_miso == 12 || _miso == 8)
-	    #endif
-		{	
-        	spi_port->setMISO(_miso);
-    	} else {
-			_miso = 0xff;	// set miso to 255 as flag it is bad
-		}
-	} else {
-        return; // not valid pins...
-	}
-	*/
-
+    Serial.printf("::begin %x %d %d %d\n", (uint32_t)spi_port, _mosi, _miso, _sclk);  Serial.flush();
 	if ((_mosi != 255) || (_miso != 255) || (_sclk != 255)) {
-		#if defined(__MK64FX512__) || defined(__MK66FX1M0__)
-			if(spi_port == &SPI){
-				if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk)) {
-					//spi_port= &SPI;
-					uint32_t *pa = (uint32_t*)((void*)spi_port);
-					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-					_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
-					_fifo_size = _spi_hardware->queue_size;		// remember the queue size
-				}
-				Serial.println("ILI9488_t3n: SPI automatically selected");
-			} else if(spi_port == &SPI1){
-				if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsMISO(_miso) && SPI1.pinIsSCK(_sclk)) {
-					//spi_port= &SPI1;
-					uint32_t *pa = (uint32_t*)((void*)spi_port);
-					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-					_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
-					_fifo_size = _spi_hardware->queue_size;		// remember the queue size
-				}
-				Serial.println("ILI9488_t3n: SPI1 automatically selected");
-			} else if(spi_port == &SPI2){
-				if (SPI2.pinIsMOSI(_mosi) && SPI2.pinIsMISO(_miso) && SPI2.pinIsSCK(_sclk)) {
-					//spi_port= &SPI2;
-					uint32_t *pa = (uint32_t*)((void*)spi_port);
-					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-					_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
-					_fifo_size = _spi_hardware->queue_size;		// remember the queue size
-				}
-				Serial.println("ILI9488_t3n: SPI2 automatically selected");
-			} else {
-				Serial.println("SPI Port not supported");
-			}
-		#elif defined(__MK20DX256__)
-			if(spi_port == &SPI){
-				if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk)) {
-					//spi_port= &SPI;
-					uint32_t *pa = (uint32_t*)((void*)spi_port);
-					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-					_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
-					_fifo_size = _spi_hardware->queue_size;		// remember the queue size
-				}
-				Serial.println("ILI9488_t3n: SPI automatically selected");
-			} else {
-				Serial.println("SPI Port not supported");
-			}
-		#endif
+		if (!spi_port) {
+			//Serial.println("SPI Port not specified"); Serial.flush();
+			if (SPI.pinIsMOSI(_mosi) && SPI.pinIsSCK(_sclk)) spi_port = &SPI;
+			#if defined(__MKL26Z64__) || defined(__MK64FX512__) || defined(__MK66FX1M0__) || defined(__IMXRT1062__)
+			else if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsSCK(_sclk)) spi_port = &SPI1;
+			#if defined(__MK64FX512__) || defined(__MK66FX1M0__) || defined(__IMXRT1062__)
+			else if (SPI2.pinIsMOSI(_mosi) && SPI2.pinIsSCK(_sclk)) spi_port = &SPI2;
+			#endif
+			#endif
+			else spi_port = &SPI; 	// this will fail below but at least shows
+		} 
 
-		uint8_t mosi_sck_bad = false;
-		if(!(spi_port->pinIsMOSI(_mosi)))  {
-			Serial.print(" MOSI");
-			mosi_sck_bad = true;
-		}
-		if (!spi_port->pinIsSCK(_sclk)) {
-			Serial.print(" SCLK");
-			mosi_sck_bad = true;
-		}
+		// Now validate the pins
+		if (spi_port->pinIsMOSI(_mosi) && spi_port->pinIsSCK(_sclk)) {
+			//spi_port= &SPI;
+			if(!(spi_port->pinIsMISO(_miso))) {
+				_miso = 0xff;	// set miso to 255 as flag it is bad
+				Serial.println("ILI9488_t3n: Invalid MISO pin");
+			}
 
-		// Maybe allow us to limp with only MISO bad
-		if(!(spi_port->pinIsMISO(_miso))) {
-			Serial.print(" MISO");
-			_miso = 0xff;	// set miso to 255 as flag it is bad
-		}
-		Serial.println();
-		
-		if (mosi_sck_bad) {
+		} else {
+			if(!(spi_port->pinIsMOSI(_mosi)))  {
+				Serial.print(" MOSI");
+			}
+			if (!spi_port->pinIsSCK(_sclk)) {
+				Serial.print(" SCLK");
+			}
+
+			// Maybe allow us to limp with only MISO bad
+			if(!(spi_port->pinIsMISO(_miso))) {
+				Serial.print(" MISO");
+				_miso = 0xff;	// set miso to 255 as flag it is bad
+			}
+			Serial.println();
 			Serial.print("ILI9488_t3n: Error not valid SPI pins:");
 			return; // not valid pins...
 		}
@@ -1773,9 +1746,16 @@ void ILI9488_t3::begin(uint32_t clock)
         spi_port->setMOSI(_mosi);
         if (_miso != 0xff) spi_port->setMISO(_miso);
         spi_port->setSCK(_sclk);
-	}		
+    }
 
-	
+    // lets grab SPI data from the hardware object
+	if (!spi_port) spi_port = &SPI;	// assume first one... 
+
+#if defined(KINETISK)	
+	uint32_t *pa = (uint32_t*)((void*)spi_port);
+	_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+	_pkinetisk_spi = (KINETISK_SPI_t *)(void*)pa[0];
+	_fifo_size = _spi_hardware->queue_size;		// remember the queue size
 	spi_port->begin();
 	if (spi_port->pinIsChipSelect(_cs, _dc)) {
 		pcs_data = spi_port->setCS(_cs);
@@ -1793,69 +1773,13 @@ void ILI9488_t3::begin(uint32_t clock)
 
 		}
 	}
-#elif defined(__IMXRT1052__) || defined(__IMXRT1062__)  // Teensy 4.x 
-		if(spi_port == &SPI){
-			if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk)) {
-				//spi_port= &SPI;
-				uint32_t *pa = (uint32_t*)((void*)spi_port);
-				_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-				_spi_num = 0;
-				_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
-			}
-			Serial.println("ILI9488_t3n: (T4) SPI automatically selected");
-		}
-		#if defined(__IMXRT1062__)
-			if(spi_port == &SPI1){
-				if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsMISO(_miso) && SPI1.pinIsSCK(_sclk)) {
-					//spi_port= &SPI;
-					uint32_t *pa = (uint32_t*)((void*)spi_port);
-					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-					_spi_num = 1;
-					_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
-				}
-				Serial.println("ILI9488_t3n: (T4) SPI1 automatically selected");
-			} else if(spi_port == &SPI2){
-				if (SPI2.pinIsMOSI(_mosi) && SPI2.pinIsMISO(_miso) && SPI2.pinIsSCK(_sclk)) {
-					//spi_port= &SPI;
-					uint32_t *pa = (uint32_t*)((void*)spi_port);
-					_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-					_spi_num = 2;
-					_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
-				}
-				Serial.println("ILI9488_t3n: (T4) SPI2 automatically selected");
-			} else if(spi_port != &SPI){
-				Serial.println("T4: SPI1/2 Port not supported");
-				return;
-			}
-		#endif
-	
-		uint8_t mosi_sck_bad = false;
-		if(!(spi_port->pinIsMOSI(_mosi)))  {
-			Serial.print(" MOSI  "); Serial.println(_mosi);
-			mosi_sck_bad = true;
-		}
-		if (!spi_port->pinIsSCK(_sclk)) {
-			Serial.print(" SCLK  "); Serial.println(_sclk);
-			mosi_sck_bad = true;
-		}
+	//Serial.printf("SPIx: %x %x %x - %d %x %x\n", (uint32_t)spi_port, (uint32_t)_spi_hardware, (uint32_t)_pkinetisk_spi, _fifo_size, pcs_command, pcs_data); Serial.flush();
+#elif defined(__IMXRT1062__)  // Teensy 4.x 
+	uint32_t *pa = (uint32_t*)((void*)spi_port);
+	_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
+	_spi_num = (spi_port == &SPI)? 0 :  ((spi_port == &SPI1)? 1 : 2);
+	_pimxrt_spi = (IMXRT_LPSPI_t *)(void*)pa[0];
 
-		// Maybe allow us to limp with only MISO bad
-		if(!(spi_port->pinIsMISO(_miso))) {
-			Serial.print(" MISO  "); Serial.println(_miso);
-			_miso = 0xff;	// set miso to 255 as flag it is bad
-		}
-		Serial.println();
-		
-		if (mosi_sck_bad) {
-			Serial.print("ILI9488_t3n: Error not valid SPI pins:");
-			return; // not valid pins...
-		}
-		
-		Serial.printf("MOSI:%d MISO:%d SCK:%d\n\r", _mosi, _miso, _sclk);			
-        spi_port->setMOSI(_mosi);
-        if (_miso != 0xff) spi_port->setMISO(_miso);
-        spi_port->setSCK(_sclk);
-	
 	_pending_rx_count = 0;
 	spi_port->begin();
 	_csport = portOutputRegister(_cs);
@@ -1883,29 +1807,6 @@ void ILI9488_t3::begin(uint32_t clock)
 	}
 	maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7));
 #elif defined(KINETISL)
-	if ((_mosi != 255) || (_miso != 255) || (_sclk != 255)) {
-		// Lets verify that all of the specifid pins are valid... right now only care about MSOI and sclk... 
-		if (! (((_mosi == 255) || spi_port->pinIsMOSI(_mosi)) && ((_sclk == 255) || spi_port->pinIsSCK(_sclk)))) {
-			// one of those two pins are not valid, lets try to see if there is a valid one
-			// In this case we will not check for 255 as we assume both most be specified...
-			if (SPI.pinIsMOSI(_mosi) && SPI.pinIsSCK(_sclk)) {
-				spi_port = &SPI;
-			} else if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsSCK(_sclk)) {
-				spi_port = &SPI1;
-			} else {
-				Serial.println("SPI Pins are not valid");
-				return; 	// we will probably crash!
-			}
-		}
-
-		// lets setup any non standard IO pins.
-		if (_mosi != 255) spi_port->setMOSI(_mosi);
-		if (_sclk != 255) spi_port->setSCK(_sclk);
-		if (_miso != 255) {
-			if (spi_port->pinIsMISO(_miso)) 
-				spi_port->setMISO(_miso);
-		}
-	}
 	uint32_t *pa = (uint32_t*)((void*)spi_port);
 	_spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
 	_pkinetisl_spi = (KINETISL_SPI_t *)(void*)pa[0];
@@ -1965,6 +1866,7 @@ void ILI9488_t3::begin(uint32_t clock)
 	beginSPITransaction();
 	writecommand_last(ILI9488_DISPON);    // Display on
 	endSPITransaction();
+	Serial.println("ILI9488_t3::begin - End"); Serial.flush();
 }
 
 

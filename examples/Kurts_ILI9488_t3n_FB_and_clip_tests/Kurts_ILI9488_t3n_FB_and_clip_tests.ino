@@ -1,3 +1,16 @@
+#define TRY_EXTMEM
+#ifdef TRY_EXTMEM
+#if defined(ARDUINO_TEENSY41)
+#include <extRAM_t4.h>
+extRAM_t4 ext_mem;
+#else
+#undef TRY_EXTMEM
+#if defined(ENABLE_EXT_DMA_UPDATES)
+#error "This Version only works with External memory"
+#endif
+#endif
+#endif
+
 #include <Adafruit_GFX.h>    // Core graphics library
 #include <ili9488_t3_font_Arial.h>
 #include <ili9488_t3_font_ArialBold.h>
@@ -5,13 +18,11 @@
 #include <Fonts/FreeMonoBoldOblique12pt7b.h>
 #include <Fonts/FreeSerif12pt7b.h>
 
-#define TRY_EXTMEM
-
 #define ROTATION 3
 
 #include "SPI.h"
 
-#define USE_SPI1
+//#define USE_SPI1
 #if defined(USE_SPI1)
 #if defined(__IMXRT1062__)  // Teensy 4.x 
 #define TFT_DC 2
@@ -55,18 +66,6 @@ Adafruit_GFX_Button button;
 // BUGBUG: IF RAFB is 4 this won't fit
 #if ! defined(ENABLE_EXT_DMA_UPDATES)
 DMAMEM RAFB tft_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
-#endif
-
-#ifdef TRY_EXTMEM
-#if defined(ARDUINO_TEENSY41)
-#include <extRAM_t4.h>
-extRAM_t4 ext_mem;
-#else
-#undef TRY_EXTMEM
-#if defined(ENABLE_EXT_DMA_UPDATES)
-#error "This Version only works with External memory"
-#endif
-#endif
 #endif
 
 
@@ -117,7 +116,7 @@ void setup() {
   button.initButton(&tft, 200, 125, 100, 40, ILI9488_GREEN, ILI9488_YELLOW, ILI9488_RED, "UP", 1, 1);
   DBGSerial.println("Just before frist draw Test Screen");
 #ifdef TRY_EXTMEM
-  ext_mem.eramBegin();
+  ext_mem.begin();
   testEXTMem();
 #endif
 

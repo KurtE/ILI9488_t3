@@ -48,6 +48,19 @@
 
 #ifndef _ILI9488_t3H_
 #define _ILI9488_t3H_
+#if defined __has_include
+#if __has_include(<extRAM_t4.h>) && defined(ARDUINO_TEENSY41)
+//#include <extRAM_t4.h>
+#define ENABLE_ILI9488_FRAMEBUFFER
+#define ENABLE_EXT_DMA_UPDATES  // This is only valid for those T4.1 which have external memory. 
+//#pragma message "ILI9488_t3h -  extRAM_T4 enabled EXT DMA frame buffer"
+#endif
+
+#if __has_include(<ILI9488_sketch_options.h>)
+#  include <ILI9488_sketch_options.h>
+//#pragma message "ILI9488_t3h - included ILI9488_sketch_options.h"
+#endif
+#endif
 
 #ifdef __cplusplus
 #include "Arduino.h"
@@ -257,7 +270,8 @@ typedef struct {
 class ILI9488_t3 : public Print
 {
   public:
-	ILI9488_t3(SPIClass *SPIWire, uint8_t _CS, uint8_t _DC, uint8_t _RST = 255, uint8_t _MOSI=11, uint8_t _SCLK=13, uint8_t _MISO=12);
+	ILI9488_t3(SPIClass *SPIWire, uint8_t _CS, uint8_t _DC, uint8_t _RST = 255, uint8_t _MOSI=255, uint8_t _SCLK=255, uint8_t _MISO=255); 
+	ILI9488_t3(uint8_t _CS, uint8_t _DC, uint8_t _RST = 255, uint8_t _MOSI=255, uint8_t _SCLK=255, uint8_t _MISO=255);
 	void begin(uint32_t clock = ILI9488_SPICLOCK);
   	void sleep(bool enable);		
 	void pushColor(uint16_t color);
