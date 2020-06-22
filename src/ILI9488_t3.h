@@ -201,6 +201,11 @@ typedef uint8_t RAFB;
 #define ILI9488_t3_font_t ILI9341_t3_font_t
 
 // Lets see about supporting Adafruit fonts as well?
+#if __has_include(<gfxfont.h>)
+	#include <gfxfont.h>
+#endif
+
+// Lets see about supporting Adafruit fonts as well?
 #ifndef _GFXFONT_H_
 #define _GFXFONT_H_
 
