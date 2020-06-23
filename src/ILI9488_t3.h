@@ -49,12 +49,6 @@
 #ifndef _ILI9488_t3H_
 #define _ILI9488_t3H_
 #if defined __has_include
-#if __has_include(<extRAM_t4.h>) && defined(ARDUINO_TEENSY41)
-//#include <extRAM_t4.h>
-#define ENABLE_ILI9488_FRAMEBUFFER
-#define ENABLE_EXT_DMA_UPDATES  // This is only valid for those T4.1 which have external memory. 
-//#pragma message "ILI9488_t3h -  extRAM_T4 enabled EXT DMA frame buffer"
-#endif
 
 #if __has_include(<ILI9488_sketch_options.h>)
 #  include <ILI9488_sketch_options.h>
@@ -684,8 +678,8 @@ class ILI9488_t3 : public Print
 	DMASetting   		_dmasettings[6];
 	DMAChannel  		_dmatx;
 	#else
-	static DMASetting 	_dmasettings[2];
-	static DMAChannel  	_dmatx;
+	DMASetting 			_dmasettings[2];
+	DMAChannel  		_dmatx;
 
 	bool fillDMApixelBuffer(uint32_t *buffer_ptr);
 
