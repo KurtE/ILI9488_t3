@@ -1,9 +1,6 @@
-#define TRY_EXTMEM
+//#define TRY_EXTMEM
 #ifdef TRY_EXTMEM
-#if defined(ARDUINO_TEENSY41)
-#include <extRAM_t4.h>
-extRAM_t4 ext_mem;
-#else
+#if !defined(ARDUINO_TEENSY41)
 #undef TRY_EXTMEM
 #if defined(ENABLE_EXT_DMA_UPDATES)
 #error "This Version only works with External memory"
@@ -116,7 +113,6 @@ void setup() {
   button.initButton(&tft, 200, 125, 100, 40, ILI9488_GREEN, ILI9488_YELLOW, ILI9488_RED, "UP", 1, 1);
   DBGSerial.println("Just before frist draw Test Screen");
 #ifdef TRY_EXTMEM
-  ext_mem.begin();
   testEXTMem();
 #endif
 
@@ -636,8 +632,8 @@ void drawTextScreen1(bool fOpaque) {
 
 #ifdef TRY_EXTMEM
 void  testEXTMem() {
-#if defined(ENABLE_EXT_DMA_UPDATES)
   elapsedMicros em;
+#if defined(ENABLE_EXT_DMA_UPDATES)
   em = 0;
   tft.setFrameBuffer(extmem_frame_buffer);
   tft.fillScreen(ILI9488_RED);
