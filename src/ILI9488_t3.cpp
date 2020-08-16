@@ -3144,7 +3144,7 @@ void ILI9488_t3::drawFontChar(unsigned int c)
 			while (screen_x-- > 1) {
 				write16BitColor(textbgcolor);
 			}
-			write16BitColor(textbgcolor);
+			write16BitColor(textbgcolor, true);
 			endSPITransaction();
 		}
 
