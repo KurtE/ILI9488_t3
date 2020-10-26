@@ -78,7 +78,7 @@ typedef uint8_t RAFB;
 #define ENABLE_ILI9488_FRAMEBUFFER
 // define ILI9488_USES_PALLET if you wish to force T4 to use 8 bit buffer instead of 16 bit
 //#define ILI9488_USES_PALLET
-//#define ENABLE_EXT_DMA_UPDATES  // This is only valid for those T4.1 which have external memory. 
+#define ENABLE_EXT_DMA_UPDATES  // This is only valid for those T4.1 which have external memory. 
 
 #ifndef ARDUINO_TEENSY41
 #undef ENABLE_EXT_DMA_UPDATES
@@ -323,6 +323,10 @@ class ILI9488_t3 : public Print
 	uint16_t readPixel(int16_t x, int16_t y);
 	void readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *pcolors);
 	void writeRect(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t *pcolors);
+
+	// Like writeRect, but allows you to write an internal portion of an image instead of whole image.
+	void writeSubImageRect(int16_t x, int16_t y, int16_t w, int16_t h, 
+	int16_t image_offset_x, int16_t image_offset_y, int16_t image_width, int16_t image_height, const uint16_t *pcolors);
 
 	// writeRect8BPP - 	write 8 bit per pixel paletted bitmap
 	//					bitmap data in array at pixels, one byte per pixel
