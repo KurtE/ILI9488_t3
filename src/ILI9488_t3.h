@@ -423,7 +423,7 @@ class ILI9488_t3 : public Print
       int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
     void getTextBounds(const String &str, int16_t x, int16_t y,
       int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
-	int16_t strPixelLen(const char * str);
+	int16_t strPixelLen(const char * str, uint16_t cb);
 	
 	uint32_t fetchpixel(const uint8_t *p, uint32_t index, uint32_t x);
 	void drawFontPixel( uint8_t alpha, uint32_t x, uint32_t y );
@@ -439,7 +439,7 @@ class ILI9488_t3 : public Print
 	int16_t  drawFloat(float floatNumber,int decimal,int poX, int poY);   
 	// Handle char arrays
 	int16_t drawString(const String& string, int poX, int poY);
-	int16_t drawString1(char string[], int16_t len, int poX, int poY);
+	int16_t drawString(const char string[], int16_t len, int poX, int poY);
 
 	void setTextDatum(uint8_t datum);
 	
