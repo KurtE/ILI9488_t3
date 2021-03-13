@@ -2284,10 +2284,10 @@ size_t ILI9488_t3::write(const uint8_t *buffer, size_t size)
 	  	//Serial.printf("_fontwrite bounds: %d %d %u %u\n", x, y, strngWidth, strngHeight);
 	  	// Note we may want to play with the x ane y returned if they offset some
 		if (_center_x_text && strngWidth > 0){//Avoid operations for strngWidth = 0
-			cursor_x -= ((x + strngWidth) / 2);
+      		cursor_x -= (x + strngWidth / 2);
 		}
 		if (_center_y_text && strngHeight > 0){//Avoid operations for strngWidth = 0
-			cursor_y -= ((y + strngHeight) / 2);
+		    cursor_y -= (y + strngHeight / 2);
 		}
 		_center_x_text = false;
 		_center_y_text = false;
@@ -3284,7 +3284,7 @@ void ILI9488_t3::charBounds(char c, int16_t *x, int16_t *y,
 
             int16_t
                     x1 = *x + xoffset,
-                    y1 = *y + yoffset,
+                    y1 = *y + font->cap_height - height - yoffset,
                     x2 = x1 + width,
                     y2 = y1 + height;
 
