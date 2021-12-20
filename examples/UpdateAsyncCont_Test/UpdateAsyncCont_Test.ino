@@ -1,5 +1,3 @@
-#include <extRAM_t4.h>
-extRAM_t4 ext_mem;
 
 #include <ili9488_t3_font_ArialBold.h>
 #include <ILI9488_t3.h>
@@ -50,8 +48,13 @@ uint16_t our_pallet[] = {
 #define COUNT_SHUTDOWN_FRAMES 16
 volatile uint8_t shutdown_cont_update_count = 0xff;
 
+#ifdef ARDUINO_TEENSY41
+extern "C" {
+  extern uint8_t external_psram_size;
+  EXTMEM RAFB extmem_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
+}
+#endif
 
-EXTMEM RAFB extmem_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
 
 void setup() {
   while (!Serial && (millis() < 4000)) ;
@@ -60,9 +63,14 @@ void setup() {
   Serial.printf("  Size of RAFB: %d\n", sizeof(RAFB));
   tft.begin(26000000);
 
-  tft.setFrameBuffer(extmem_frame_buffer);
+#ifdef ARDUINO_TEENSY41
+  if (external_psram_size) tft.setFrameBuffer(extmem_frame_buffer);
+  else Serial.println("Warning this sketch is setup to run on Teensy 4.1 with external memory");
+#else
+  Serial.println("Warning this sketch is setup to run on Teensy 4.1 with external memory");
+#endif
+
   tft.setRotation(ROTATION);
-  ext_mem.begin();
   tft.useFrameBuffer(true);
   tft.fillScreen(ILI9488_BLACK);
   tft.setCursor(ILI9488_t3::CENTER, ILI9488_t3::CENTER);
@@ -86,13 +94,17 @@ void frame_callback() {
     tft.setFont(Arial_20_Bold);
     tft.println("Stop Signalled");
     shutdown_cont_update_count--;
+    #ifdef ARDUINO_TEENSY41
     arm_dcache_flush(extmem_frame_buffer, sizeof(extmem_frame_buffer));
+    #endif
   } else if (shutdown_cont_update_count == 0) {
     tft.setCursor(ILI9488_t3::CENTER, tft.getCursorY());
     tft.println("endUpdateAsync");
     tft.endUpdateAsync();
     Serial.println("after endUpdateAsync");
+    #ifdef ARDUINO_TEENSY41
     arm_dcache_flush(extmem_frame_buffer, sizeof(extmem_frame_buffer));
+    #endif
   } else if (shutdown_cont_update_count < COUNT_SHUTDOWN_FRAMES) {
     shutdown_cont_update_count--;
   } else {
@@ -137,7 +149,9 @@ void frame_callback() {
         if (display_other > 2) display_other =  0 ;
       }
 
+      #ifdef ARDUINO_TEENSY41
       arm_dcache_flush(extmem_frame_buffer, sizeof(extmem_frame_buffer));
+      #endif
       tft.setClipRect();
     }
   }
