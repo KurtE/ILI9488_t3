@@ -1,9 +1,8 @@
 //=============================================================================
 // Simple test viewer app for several of the USB devices on ili9488 display
 //
-// Currently requires the libraries
-//    ili9488_t3 that can be located: https://github.com/KurtE/ILI9488_t3
-//    spin: https://github.com/KurtE/SPIN
+// Current versions of the libraries can be found at:
+//    ili9488_t3 - https://github.com/mjs513/ILI9488_t3
 //
 // Teensy 3.6 Pins
 //   8 = RST

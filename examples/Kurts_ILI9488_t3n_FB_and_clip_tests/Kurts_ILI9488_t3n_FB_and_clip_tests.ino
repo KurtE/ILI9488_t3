@@ -1,9 +1,24 @@
+//-------------------------------------------------------------------
+// Kurt's Frame buffer and clip tests
+//
+// This test program is a set of random tests that have been done
+// over time to test out the different functions to make sure they
+// are working with the clipping functions as well as the frame
+// buffer.  So you can for example test to see if you get the 
+// same results with the frame buffer turned on or off
+// 
+// this sketch is in the public domain. 
+//
+// This sketch depends on the fonts that are contained in the library
+//     https://github.com/mjs513/ILI9341_fonts
+//-------------------------------------------------------------------
+
 //#define TRY_EXTMEM
 #ifdef TRY_EXTMEM
 #if !defined(ARDUINO_TEENSY41)
 #undef TRY_EXTMEM
 #if defined(ENABLE_EXT_DMA_UPDATES)
-#error "This Version only works with External memory"
+#error "This Version only works with Teensy 4.1 with External memory"
 #endif
 #endif
 #endif
@@ -324,7 +339,8 @@ void fillScreenTest() {
 
 }
 void printTextSizes(const char *sz) {
-  Serial.printf("%s(%d,%d): SPL:%u ", sz, tft.getCursorX(), tft.getCursorY(), tft.strPixelLen(sz));
+  Serial.printf("%s(%d,%d): SPL:%u ", sz, tft.getCursorX(), tft.getCursorY(), 
+      tft.strPixelLen(sz, strlen(sz)));
   int16_t x, y;
   uint16_t w, h;
   tft.getTextBounds(sz, tft.getCursorX(), tft.getCursorY(), &x, &y, &w, &h);
