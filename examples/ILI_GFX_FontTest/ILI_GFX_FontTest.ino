@@ -1,3 +1,15 @@
+//-------------------------------------------------------------------
+//
+// This test program illustrates a simple use of ILI9341 fonts with the
+// ILI9488 display.
+// 
+// this sketch is in the public domain. 
+//
+// This sketch depends on the fonts that are contained in the library
+//     https://github.com/mjs513/ILI9341_fonts
+//-------------------------------------------------------------------
+
+
 #include <Adafruit_GFX.h>
 
 #include <SPI.h>
