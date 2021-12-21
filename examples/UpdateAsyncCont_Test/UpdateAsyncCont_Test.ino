@@ -1,4 +1,47 @@
 
+//=============================================================================
+// Test continuous Frame buffer updates on ili9488 display
+//
+// Current versions of the libraries can be found at:
+//    ili9488_t3 - https://github.com/mjs513/ILI9488_t3
+//
+// Default Pins
+//   8 = RST
+//   9 = D/C
+//  10 = CS
+//
+// This sketch will only work properly on boards that have enough memory for a 
+// frame buffer.  Note this display does not support 16 bit colors over
+// SPI, so we instead have to use 18 bit colors.  The code in this library
+// tries to map colors to the 18 bit outputs.  The code works differently
+// depending on the different teensy boards.  A 16 bit frame buffer would require
+// 480*320*2 = 307200 bytes.
+// 
+// So this would not work on T3.5/3.6 - So instead we use a pallet where we only
+// store 8 bits per pixel.  The code works my checking for each unique color as
+// you output and stores them in a pallet, and stores the index into the frame
+// buffer.  
+//
+// On T4.x - There is enough memory to support the full 16 bit frame buffer. 
+// however you can still force the code to use the Pallet by
+// defining ILI9488_USES_PALLET in the header file
+//
+// Note in both of these cases, as the display does not support 16 bit pixels
+// in SPI mode, when the code actually updates the display we map the 
+// 16 bit colors (565) into 18 bit colors (666).  So in order to do DMA updates,
+// there are two smaller buffers defined, which we map the next section of the screen
+// into a form the display can handle, and our DMA Settings are setup with a callback
+// function which does the mapping for the next section.
+//
+// If you have a Teensy 4.1 with external PSRAM there is another option, which you can 
+// enable (#define ENABLE_EXT_DMA_UPDATES ), which allows you to define your
+// frame buffer to use 32 bits per pixel.  The pixels are stored in 666 format 
+// actually use 24 bits(888), and with this format, the Async updates using DMA
+// can update the screen directly without needing the callback function to be
+// used to translate the pixel data.
+//
+// This example is in the public domain
+//=============================================================================
 #include <ili9488_t3_font_ArialBold.h>
 #include <ILI9488_t3.h>
 
@@ -48,7 +91,7 @@ uint16_t our_pallet[] = {
 #define COUNT_SHUTDOWN_FRAMES 16
 volatile uint8_t shutdown_cont_update_count = 0xff;
 
-#ifdef ARDUINO_TEENSY41
+#if defined(TRY_EXTMEM) && defined(ARDUINO_TEENSY41)
 extern "C" {
   extern uint8_t external_psram_size;
   EXTMEM RAFB extmem_frame_buffer[ILI9488_TFTWIDTH * ILI9488_TFTHEIGHT];
@@ -63,7 +106,7 @@ void setup() {
   Serial.printf("  Size of RAFB: %d\n", sizeof(RAFB));
   tft.begin(26000000);
 
-#ifdef ARDUINO_TEENSY41
+#if defined(TRY_EXTMEM) && defined(ARDUINO_TEENSY41)
   if (external_psram_size) tft.setFrameBuffer(extmem_frame_buffer);
   else Serial.println("Warning this sketch is setup to run on Teensy 4.1 with external memory");
 #else
@@ -94,7 +137,7 @@ void frame_callback() {
     tft.setFont(Arial_20_Bold);
     tft.println("Stop Signalled");
     shutdown_cont_update_count--;
-    #ifdef ARDUINO_TEENSY41
+    #if defined(TRY_EXTMEM) && defined(ARDUINO_TEENSY41)
     arm_dcache_flush(extmem_frame_buffer, sizeof(extmem_frame_buffer));
     #endif
   } else if (shutdown_cont_update_count == 0) {
@@ -102,7 +145,7 @@ void frame_callback() {
     tft.println("endUpdateAsync");
     tft.endUpdateAsync();
     Serial.println("after endUpdateAsync");
-    #ifdef ARDUINO_TEENSY41
+    #if defined(TRY_EXTMEM) && defined(ARDUINO_TEENSY41)
     arm_dcache_flush(extmem_frame_buffer, sizeof(extmem_frame_buffer));
     #endif
   } else if (shutdown_cont_update_count < COUNT_SHUTDOWN_FRAMES) {
@@ -149,7 +192,7 @@ void frame_callback() {
         if (display_other > 2) display_other =  0 ;
       }
 
-      #ifdef ARDUINO_TEENSY41
+      #if defined(TRY_EXTMEM) && defined(ARDUINO_TEENSY41)
       arm_dcache_flush(extmem_frame_buffer, sizeof(extmem_frame_buffer));
       #endif
       tft.setClipRect();
