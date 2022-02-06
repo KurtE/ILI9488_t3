@@ -19,7 +19,7 @@ In addition, scrolling text has been added using appropriate function from, http
     void resetScrollBackgroundColor(uint16_t color);
     void setScrollTextArea(int16_t x, int16_t y, int16_t w, int16_t h);
     void setScrollBackgroundColor(uint16_t color);
-    void scrollTextArea(uint8_t scrollSize);
+    void scrollTextArea(int8_t scrollSize);
     void resetScrollBackgroundColor(uint16_t color);
 ```
 This library was created to allow extended use on the ILI9488 larger display and supports T3.5, t3.6 and beyond.

@@ -452,7 +452,7 @@ class ILI9488_t3 : public Print
 	void setScrollBackgroundColor(uint16_t color);
 	void enableScroll(void);
 	void disableScroll(void);
-	void scrollTextArea(uint8_t scrollSize);
+	void scrollTextArea(int8_t scrollSize);
 	void resetScrollBackgroundColor(uint16_t color);
 	
 #ifdef ENABLE_ILI9488_FRAMEBUFFER
