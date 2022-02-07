@@ -4091,13 +4091,27 @@ int16_t ILI9488_t3::drawString(const char string[], int16_t len, int poX, int po
 return sumX;
 }
 
-void ILI9488_t3::scrollTextArea(uint8_t scrollSize){
+void ILI9488_t3::scrollTextArea(int8_t scrollSize)
+{
 	uint16_t awColors[scroll_width];
-	for (int y=scroll_y+scrollSize; y < (scroll_y+scroll_height); y++) { 
-		readRect(scroll_x, y, scroll_width, 1, awColors); 
-		writeRect(scroll_x, y-scrollSize, scroll_width, 1, awColors);  
+	if (scrollSize >= 0)
+	{
+		for (int y = scroll_y + scrollSize; y < (scroll_y + scroll_height); y++)
+		{
+			readRect(scroll_x, y, scroll_width, 1, awColors);
+			writeRect(scroll_x, y - scrollSize, scroll_width, 1, awColors);
+		}
+		fillRect(scroll_x, (scroll_y + scroll_height) - scrollSize, scroll_width, scrollSize, scrollbgcolor);
 	}
-	fillRect(scroll_x, (scroll_y+scroll_height)-scrollSize, scroll_width, scrollSize, scrollbgcolor);
+	else
+	{
+		for (int y = scroll_y + scroll_height - scrollSize - 1; y >= scroll_y; y--)
+		{
+			readRect(scroll_x, y, scroll_width, 1, awColors);
+			writeRect(scroll_x, y - scrollSize, scroll_width, 1, awColors);
+		}
+		fillRect(scroll_x, scroll_y, scroll_width, -scrollSize, scrollbgcolor);
+	}
 }
 
 void ILI9488_t3::setScrollTextArea(int16_t x, int16_t y, int16_t w, int16_t h){
