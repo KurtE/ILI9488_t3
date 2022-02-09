@@ -2,7 +2,7 @@ Overview and Warning:
 =====
 This is a modified version of the official PJRC ILI9341_t3 library (https://github.com/PaulStoffregen/ILI9341_t3) to work with ILI9488 displays. And it is always a Work In Progress.
 
-Currently the library has been verified to work with Teensy 3.2 (no framebuffer), T3.5, and T3.6.  Teensy LC is not supported at this time.
+Currently the library has been verified to work with Teensy 3.2 (no framebuffer), T3.5, T3.6, T4.0, T4.1 and the Teensy Micromod board.  Teensy LC is not supported at this time.
 
 This library borrows some concepts and functionality from another ILI9341 library, https://github.com/KurtE/ILI9341_t3n.  It also incorporates functionality from the TFT_ILI9341_ESP, https://github.com/Bodmer/TFT_ILI9341_ESP, for additional functions:
 ```c++
@@ -22,6 +22,9 @@ In addition, scrolling text has been added using appropriate function from, http
     void scrollTextArea(uint8_t scrollSize);
     void resetScrollBackgroundColor(uint16_t color);
 ```
+
+NOTE: Scroll text area does not appear to work correctly with the ILI9488 displays that are readily available from EBAY or Amazon (the SPI only red boards with the yellow connector) without using a FrameBuffer. The ScrollTest_Framebuffer example shows how to use scrollTextBuffer with a Framebuffer.
+
 This library was created to allow extended use on the ILI9488 larger display and supports T3.5, t3.6 and beyond.
 
 For further development status see: https://forum.pjrc.com/threads/55735-ILI9488_t3-Support-for-the-ILI9488-on-T3-x-and-beyond
