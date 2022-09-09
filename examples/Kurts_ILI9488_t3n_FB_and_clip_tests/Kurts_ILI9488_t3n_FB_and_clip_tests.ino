@@ -241,7 +241,7 @@ void drawTestScreen() {
   tft.readRect(0, 0, 50, 50, pixel_data);
   // For heck of it lets make sure readPixel and ReadRect
   // give us same data, maybe check along diagnal?
-  for (uint i = 0; i < 50; i++) {
+  for (unsigned int i = 0; i < 50; i++) {
     uint16_t pixel_color = tft.readPixel(i, i);
     if (pixel_color != pixel_data[i * 50 + i]) {
       DBGSerial.printf("Read rect/pixel mismatch: %d %x %x\n", i, pixel_color, pixel_data[i * 50 + i]);
