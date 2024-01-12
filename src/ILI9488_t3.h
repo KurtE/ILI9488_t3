@@ -322,9 +322,20 @@ class ILI9488_t3 : public Print
 	// Added functions to read pixel data...
 	uint16_t readPixel(int16_t x, int16_t y);
 	void readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *pcolors);
+
+  // This method writes a rectangle of pixel data either to the screen or to frame buffer
+  // this is like the fillRect, except instead of contant color, the array contains the
+  // the color for each pixel.
 	void writeRect(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t *pcolors);
 
-	// writeRect8BPP - 	write 8 bit per pixel paletted bitmap
+
+  // The write sub-rect is like the writeRect, except we only want to output a portion of it, so it needs to
+  // skip through portions of the pcolor array to keep things aligned.
+  void writeSubImageRect(int16_t x, int16_t y, int16_t w, int16_t h, 
+                        int16_t image_offset_x, int16_t image_offset_y, int16_t image_width, int16_t image_height, 
+                        const uint16_t *pcolors);
+  
+  // writeRect8BPP - 	write 8 bit per pixel paletted bitmap
 	//					bitmap data in array at pixels, one byte per pixel
 	//					color palette data in array at palette
 	void writeRect8BPP(int16_t x, int16_t y, int16_t w, int16_t h, const uint8_t *pixels, const uint16_t * palette );
