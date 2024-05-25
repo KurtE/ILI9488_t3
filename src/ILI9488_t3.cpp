@@ -219,10 +219,10 @@ void ILI9488_t3::setFrameBuffer(RAFB *frame_buffer)
 {
 	#ifdef ENABLE_ILI9488_FRAMEBUFFER
 	_pfbtft = frame_buffer;
-	if (_pfbtft != NULL) {
-		// Frame buffer is color index only here...
-		memset(_pfbtft, 0, ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH);
-	}
+//	if (_pfbtft != NULL) {
+//		// Frame buffer is color index only here...
+//		memset(_pfbtft, 0, ILI9488_TFTHEIGHT*ILI9488_TFTWIDTH);
+//	}
 
 	#endif	
 }
@@ -4307,6 +4307,7 @@ void ILI9488_t3::process_dma_interrupt(void) {
 
 		_dma_frame_count++;
 		//Serial.println("\nFrame complete");
+		if (_frame_complete_callback) (*_frame_complete_callback)();
 
 		if ((_dma_state & ILI9488_DMA_CONT) == 0) {
 			// We are in single refresh mode or the user has called cancel so
