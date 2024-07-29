@@ -1775,7 +1775,6 @@ void ILI9488_t3::begin(uint32_t clock)
 	_clock = clock;	// remember the passed in clock...
 
     // verify SPI pins are valid;
-    Serial.printf("::begin %x %d %d %d\n", (uint32_t)spi_port, _mosi, _miso, _sclk);  Serial.flush();
 	if ((_mosi != 255) || (_miso != 255) || (_sclk != 255)) {
 		if (!spi_port) {
 			//Serial.println("SPI Port not specified"); Serial.flush();
@@ -1939,7 +1938,6 @@ void ILI9488_t3::begin(uint32_t clock)
 	beginSPITransaction();
 	writecommand_last(ILI9488_DISPON);    // Display on
 	endSPITransaction();
-	Serial.println("ILI9488_t3::begin - End"); Serial.flush();
 }
 
 
