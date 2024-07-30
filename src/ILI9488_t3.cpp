@@ -1814,7 +1814,7 @@ void ILI9488_t3::begin(uint32_t clock)
 			return; // not valid pins...
 		}
 		
-		Serial.printf("MOSI:%d MISO:%d SCK:%d\n\r", _mosi, _miso, _sclk);			
+		//Serial.printf("MOSI:%d MISO:%d SCK:%d\n\r", _mosi, _miso, _sclk);			
         spi_port->setMOSI(_mosi);
         if (_miso != 0xff) spi_port->setMISO(_miso);
         spi_port->setSCK(_sclk);
